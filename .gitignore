@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Generated artifacts (not the primary spec)
+swaggerOutput.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
