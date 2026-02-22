@@ -10,7 +10,7 @@ This repository contains the OpenAPI 3.0.0 spec for the Nomad Media **client SDK
 
 | File | Description |
 |------|-------------|
-| `openapi-docs.yaml` | The SDK spec — 236 operations across 30 tags. **Generated — do not edit by hand.** |
+| `openapi-docs.yaml` | The SDK spec — version `2026-03`, 236 operations across 30 tags. **Generated — do not edit by hand.** |
 
 The spec is generated from the [`sdk-javascript`](https://github.com/Nomad-Media/sdk-javascript) repository. See its [Developer Workflow](https://github.com/Nomad-Media/sdk-javascript#developer-workflow) section for generation instructions.
 
