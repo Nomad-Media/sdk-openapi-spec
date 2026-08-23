@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
     title: Nomad Client SDK
-    version: 2026-04
+    version: 2026-09
 servers:
     - url: serviceApiUrl
 
@@ -238,7 +238,7 @@ paths:
                                 sources:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/MediaSource'
+                                        type: object
                                     description: Array of source segments for the composition
                                 title:
                                     type: string
@@ -267,7 +267,7 @@ paths:
                                 audioTracks:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/AudioTrack'
+                                        type: object
                                     description: Audio track configuration for the output
                             required:
                                 - sources
@@ -336,8 +336,11 @@ paths:
                                 audioTracks:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/AudioTrack'
+                                        type: object
                                     description: Audio track configuration for the clip
+                                useHlsSegmentBasedClipping:
+                                    type: boolean
+                                    description: Request HLS segment-based clipping (faster, may be less frame-accurate)
                             required:
                                 - assetId
                                 - startTimeCode
@@ -349,6 +352,7 @@ paths:
                                 - relatedContents
                                 - videoBitrate
                                 - audioTracks
+                                - useHlsSegmentBasedClipping
             responses:
                 '200':
                     description: Success
@@ -1167,7 +1171,7 @@ paths:
                                 annotations:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/Annotation'
+                                        type: object
                                     description: Array of annotation objects to import
                             required:
                                 - assetId
@@ -1711,6 +1715,12 @@ paths:
                                 customProperties:
                                     type: object
                                     description: Key-value pairs of custom metadata properties to set
+                                availableStartDateSpecified:
+                                    type: boolean
+                                    description: Whether to apply AVAILABLE_START_DATE. Defaults to true when a start date is provided
+                                availableEndDateSpecified:
+                                    type: boolean
+                                    description: Whether to apply AVAILABLE_END_DATE. Defaults to true when an end date is provided
                             required:
                                 - assetId
                                 - displayName
@@ -1718,6 +1728,8 @@ paths:
                                 - availableStartDate
                                 - availableEndDate
                                 - customProperties
+                                - availableStartDateSpecified
+                                - availableEndDateSpecified
             responses:
                 '200':
                     description: Success
@@ -1826,23 +1838,14 @@ paths:
                             properties:
                                 assetId:
                                     type: string
-                                    description: The unique identifier of the asset
                                 inheritSecurity:
-                                    type: boolean
-                                    description: Whether the asset inherits security from its parent
+                                    type: string
                                 securityGroups:
-                                    type: array
-                                    items:
-                                        type: object
-                                    description: Security groups to grant access
+                                    type: string
                                 securityUsers:
-                                    type: array
-                                    items:
-                                        type: object
-                                    description: Individual users to grant access
+                                    type: string
                                 clearPublicExpirationDate:
-                                    type: boolean
-                                    description: Whether to clear the public expiration date
+                                    type: string
                             required:
                                 - assetId
                                 - inheritSecurity
@@ -1858,6 +1861,309 @@ paths:
                     description: The caller is not authenticated
                 '404':
                     description: The asset was not found
+
+    /autoClipAsset:
+        post:
+            summary: Automatically detect and clip the content region of a video asset
+            operationId: autoClipAsset
+            description: 'Analyzes perceptual hashes of frames across the asset''s HLS TS chunks to find the preroll and postroll boundaries, then clips the detected content region.'
+            tags:
+                - Asset
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                assetId:
+                                    type: string
+                                    description: The unique identifier of the source video asset
+                                background:
+                                    type: boolean
+                                    description: Whether to run the auto-clip as a background job
+                            required:
+                                - assetId
+                                - background
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+                '404':
+                    description: The source asset was not found
+
+
+    # ── Asset Queue ──
+    /addDownloadsToQueue:
+        post:
+            summary: 'Add one or more assets to the caller''s download queue'
+            operationId: addDownloadsToQueue
+            description: Queues the specified assets for batch downloading. Optionally requests the lower-resolution proxy version instead of the original media.
+            tags:
+                - Asset Queue
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                ids:
+                                    type: array
+                                    items:
+                                        type: string
+                                    description: The asset identifiers to add to the download queue
+                                downloadProxy:
+                                    type: boolean
+                                    description: Whether to download the proxy (lower-resolution) version
+                            required:
+                                - ids
+                                - downloadProxy
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Invalid parameters provided
+                '401':
+                    description: The caller is not authenticated
+
+    /getTransfers:
+        get:
+            summary: 'List the caller''s asset transfers, newest first'
+            operationId: getTransfers
+            description: 'Returns a paginated list of the caller''s transfers, optionally filtered by direction and status. Pagination uses an opaque cursor.'
+            tags:
+                - Asset Queue
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                direction:
+                                    type: string
+                                    description: 'Filter by transfer direction (e.g., "downloads", "uploads")'
+                                statuses:
+                                    type: array
+                                    items:
+                                        type: string
+                                    description: Filter by one or more transfer statuses
+                                pageSize:
+                                    type: integer
+                                    description: The number of items per page
+                                cursor:
+                                    type: string
+                                    description: The pagination cursor returned by a previous call
+                                oldestFirst:
+                                    type: boolean
+                                    description: Whether to return the oldest transfers first
+                            required:
+                                - direction
+                                - statuses
+                                - pageSize
+                                - cursor
+                                - oldestFirst
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+
+    /getTransfersSummary:
+        get:
+            summary: 'Count the caller''s transfers by state'
+            operationId: getTransfersSummary
+            description: 'Returns a summary of the caller''s transfers grouped by status.'
+            tags:
+                - Asset Queue
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+
+    /deleteTransfers:
+        delete:
+            summary: 'Remove transfers from the caller''s queue'
+            operationId: deleteTransfers
+            description: 'Deletes all transfers for the given direction from the caller''s queue.'
+            tags:
+                - Asset Queue
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                direction:
+                                    type: string
+                                    description: 'The transfer direction to clear (e.g., "downloads", "uploads")'
+                            required:
+                                - direction
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+
+    /getTransfer:
+        get:
+            summary: 'Fetch a single transfer from the caller''s queue'
+            operationId: getTransfer
+            description: 'Retrieves one of the caller''s transfers by direction and identifier.'
+            tags:
+                - Asset Queue
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                direction:
+                                    type: string
+                                    description: 'The transfer direction (e.g., "downloads", "uploads")'
+                                id:
+                                    type: string
+                                    description: The unique identifier of the transfer
+                            required:
+                                - direction
+                                - id
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+                '404':
+                    description: The transfer was not found
+
+    /updateTransfer:
+        patch:
+            summary: 'Report status or progress for one of the caller''s transfers'
+            operationId: updateTransfer
+            description: Updates the status, progress, or error details of a transfer. Progress fields are only read while the transfer is in an in-progress state.
+            tags:
+                - Asset Queue
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                direction:
+                                    type: string
+                                    description: 'The transfer direction (e.g., "downloads", "uploads")'
+                                id:
+                                    type: string
+                                    description: The unique identifier of the transfer
+                                transferStatus:
+                                    type: string
+                                    description: The new transfer status
+                                completePercentage:
+                                    type: integer
+                                    description: Percent complete, 0 to 100
+                                bytesTransferred:
+                                    type: integer
+                                    description: Bytes moved so far
+                                errorMessage:
+                                    type: string
+                                    description: The failure reason, when the status indicates a failure
+                            required:
+                                - direction
+                                - id
+                                - transferStatus
+                                - completePercentage
+                                - bytesTransferred
+                                - errorMessage
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+                '404':
+                    description: The transfer was not found
+
+    /cancelTransfer:
+        post:
+            summary: 'Cancel one of the caller''s transfers'
+            operationId: cancelTransfer
+            description: Cancels an in-progress or queued transfer.
+            tags:
+                - Asset Queue
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                direction:
+                                    type: string
+                                    description: 'The transfer direction (e.g., "downloads", "uploads")'
+                                id:
+                                    type: string
+                                    description: The unique identifier of the transfer to cancel
+                            required:
+                                - direction
+                                - id
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+                '404':
+                    description: The transfer was not found
+
+    /requeueTransfer:
+        post:
+            summary: 'Retry one of the caller''s finished transfers'
+            operationId: requeueTransfer
+            description: Requeues a completed, failed, or cancelled transfer so it runs again.
+            tags:
+                - Asset Queue
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                direction:
+                                    type: string
+                                    description: 'The transfer direction (e.g., "downloads", "uploads")'
+                                id:
+                                    type: string
+                                    description: The unique identifier of the transfer to requeue
+                            required:
+                                - direction
+                                - id
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+                '404':
+                    description: The transfer was not found
 
 
     # ── Content Metadata ──
@@ -2243,7 +2549,7 @@ paths:
                     description: The caller is not authenticated
 
     /pingAuth:
-        post:
+        get:
             summary: Send an authenticated ping to the server
             operationId: pingAuth
             description: Sends an authenticated heartbeat/ping request with user session information, optionally scoped to a specific application.
@@ -2301,17 +2607,17 @@ paths:
                                 filters:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/SearchFilter'
+                                        type: object
                                     description: Array of filter objects with fieldName, operator, and values
                                 sortFields:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/SortField'
+                                        type: object
                                     description: Array of sort field objects with fieldName and sortType
                                 searchResultFields:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/SearchResultField'
+                                        type: object
                                     description: Fields to include in results
                                 similarAssetId:
                                     type: string
@@ -2345,8 +2651,8 @@ paths:
                                 searchTextFields:
                                     type: array
                                     items:
-                                        type: string
-                                    description: 'Specific text fields to search within (e.g. "AssetDetails", "Transcripts", "ExifMetadata")'
+                                        type: object
+                                    description: Specific text fields to search within
                             required:
                                 - query
                                 - offset
@@ -2364,6 +2670,33 @@ paths:
                                 - useLlmSearch
                                 - includeInternalFieldsInResults
                                 - searchTextFields
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+
+    /analyzeMappingConflicts:
+        get:
+            summary: Analyze content definitions for identifier field mapping conflicts
+            operationId: analyzeMappingConflicts
+            description: Scans all content definitions and reports fields whose identifier mappings conflict across definitions, which can cause search indexing issues.
+            tags:
+                - Search
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                maxRecordsPerContentDef:
+                                    type: integer
+                                    description: The maximum number of records to scan per content definition
+                            required:
+                                - maxRecordsPerContentDef
             responses:
                 '200':
                     description: Success
@@ -2477,6 +2810,33 @@ paths:
                     description: Success
                 '400':
                     description: Invalid parameters provided
+                '401':
+                    description: The caller is not authenticated
+
+    /reapStaleUploads:
+        post:
+            summary: Reclaim uploads that have stopped making progress
+            operationId: reapStaleUploads
+            description: Scans recent upload sessions and cancels any that have stalled, releasing the server-side resources they were holding.
+            tags:
+                - Asset Upload
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                lookBackDays:
+                                    type: integer
+                                    description: How many days back to scan for stale uploads
+                            required:
+                                - lookBackDays
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
                 '401':
                     description: The caller is not authenticated
 
@@ -2947,7 +3307,7 @@ paths:
                                 contentFields:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/ContentField'
+                                        type: object
                                     description: Array of content field definitions (null to keep existing)
                                 contentDefinitionGroup:
                                     type: string
@@ -2998,6 +3358,35 @@ paths:
                     description: The caller is not authenticated
                 '404':
                     description: The content definition was not found
+
+    /deleteContentDefinition:
+        delete:
+            summary: Delete a content definition by its unique identifier
+            operationId: deleteContentDefinition
+            description: Permanently deletes the specified content definition and its associated configuration. Confirmed against the real Admin API (`Nomad.Controller.V1Asset.ContentDefinitionController.Delete`) — this endpoint already exists server-side; this file only adds SDK coverage for it.
+            tags:
+                - Content Definition
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                contentDefinitionId:
+                                    type: string
+                                    description: The unique identifier of the content definition to delete
+                            required:
+                                - contentDefinitionId
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+                '404':
+                    description: The content definition was not found or could not be deleted
 
 
     # ── Event ──
@@ -3139,8 +3528,9 @@ paths:
                                     type: string
                                     description: The backup livestream input URL
                                 externalOutputProfiles:
-                                    type: string
-                                    format: binary
+                                    type: array
+                                    items:
+                                        type: object
                                     description: External output profiles
                                 status:
                                     type: object
@@ -3155,7 +3545,8 @@ paths:
                                     type: object
                                     description: Override settings for the schedule
                                 outputProfileGroup:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The output profile group to use
                             required:
                                 - eventId
                                 - slateVideo
@@ -3423,17 +3814,17 @@ paths:
                                 tags:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/TagRef'
+                                        type: object
                                     description: Tags to assign to the clipped asset
                                 collections:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/CollectionRef'
+                                        type: object
                                     description: Collections to assign to the clipped asset
                                 relatedContents:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/RelatedContentRef'
+                                        type: object
                                     description: Related content to associate with the clip
                                 videoBitrate:
                                     type: integer
@@ -3441,8 +3832,11 @@ paths:
                                 audioTracks:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/AudioTrack'
+                                        type: object
                                     description: Audio track configurations for the clip
+                                useHlsSegmentBasedClipping:
+                                    type: boolean
+                                    description: Request HLS segment-based clipping (faster, may be less frame-accurate)
                             required:
                                 - liveChannelId
                                 - startTimeCode
@@ -3454,6 +3848,7 @@ paths:
                                 - relatedContents
                                 - videoBitrate
                                 - audioTracks
+                                - useHlsSegmentBasedClipping
             responses:
                 '200':
                     description: Success
@@ -3505,8 +3900,9 @@ paths:
                                 externalServiceApiUrl:
                                     type: string
                                 externalOutputProfiles:
-                                    type: string
-                                    format: binary
+                                    type: array
+                                    items:
+                                        type: object
                                     description: External output profile configurations
                                 securityGroups:
                                     type: array
@@ -3784,8 +4180,9 @@ paths:
                                 externalServiceApiUrl:
                                     type: string
                                 externalOutputProfiles:
-                                    type: string
-                                    format: binary
+                                    type: array
+                                    items:
+                                        type: object
                                     description: External output profile configurations
                                 securityGroups:
                                     type: array
@@ -3805,6 +4202,35 @@ paths:
                                 - externalServiceApiUrl
                                 - externalOutputProfiles
                                 - securityGroups
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+                '404':
+                    description: The live channel was not found
+
+    /getLiveChannelParticipantToken:
+        get:
+            summary: Generate a short-lived participant token for a real-time live channel
+            operationId: getLiveChannelParticipantToken
+            description: Returns a short-lived IVS participant token used to view a real-time live channel.
+            tags:
+                - Live Channel
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                channelId:
+                                    type: string
+                                    description: The unique identifier of the live channel
+                            required:
+                                - channelId
             responses:
                 '200':
                     description: Success
@@ -3849,12 +4275,12 @@ paths:
                                 destinations:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/LiveInputDestination'
+                                        type: object
                                     description: Destination configurations for the input
                                 sources:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/LiveInputSource'
+                                        type: object
                                     description: Full source configurations (overrides SOURCE parameter)
                             required:
                                 - name
@@ -3977,12 +4403,12 @@ paths:
                                 destinations:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/LiveInputDestination'
+                                        type: object
                                     description: New destination configurations
                                 sources:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/LiveInputSource'
+                                        type: object
                                     description: Full source configurations (overrides SOURCE)
                             required:
                                 - liveInputId
@@ -4300,7 +4726,8 @@ paths:
                                     type: string
                                     description: The display name for the output profile
                                 outputType:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The output type object with id and description
                                 enabled:
                                     type: boolean
                                     description: Whether the output profile is enabled
@@ -4466,7 +4893,8 @@ paths:
                                     type: string
                                     description: The new display name
                                 outputType:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The new output type object
                                 isActive:
                                     type: string
                                 audioBitrate:
@@ -4551,18 +4979,21 @@ paths:
                                     type: boolean
                                     description: Whether the profile group is enabled
                                 manifestType:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The manifest type configuration
                                 isDefaultGroup:
                                     type: boolean
                                     description: Whether this is the default profile group
                                 liveOutputType:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The output type for the group
                                 archiveLiveOutputProfile:
                                     type: object
                                     description: The archive output profile configuration
                                 liveOutputProfiles:
-                                    type: string
-                                    format: binary
+                                    type: array
+                                    items:
+                                        type: object
                                     description: Array of output profiles to include in the group
                             required:
                                 - name
@@ -4677,18 +5108,21 @@ paths:
                                     type: boolean
                                     description: Whether the group is enabled
                                 manifestType:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The new manifest type configuration
                                 isDefaultGroup:
                                     type: boolean
                                     description: Whether this is the default group
                                 liveOutputType:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The new output type
                                 archiveLiveOutputProfile:
                                     type: object
                                     description: The new archive output profile
                                 liveOutputProfiles:
-                                    type: string
-                                    format: binary
+                                    type: array
+                                    items:
+                                        type: object
                                     description: The new array of output profiles
                             required:
                                 - liveOutputProfileGroupId
@@ -4728,7 +5162,7 @@ paths:
                                 collections:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/CollectionRef'
+                                        type: object
                                     description: The collections to filter content by
                                 endSearchDate:
                                     type: string
@@ -4753,10 +5187,11 @@ paths:
                                 tags:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/TagRef'
+                                        type: object
                                     description: The tags to filter content by
                                 thumbnailAsset:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The thumbnail asset for the playlist
                             required:
                                 - collections
                                 - endSearchDate
@@ -4799,7 +5234,8 @@ paths:
                                     type: string
                                     description: The display name for the schedule
                                 thumbnailAsset:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The thumbnail asset for the schedule
                                 timeZoneId:
                                     type: string
                                     description: The time zone identifier for the schedule
@@ -4834,7 +5270,8 @@ paths:
                                     type: string
                                     description: The display name for the playlist
                                 thumbnailAsset:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The thumbnail asset for the playlist
                                 loopPlaylist:
                                     type: boolean
                                     description: Whether the playlist should loop when it reaches the end
@@ -4874,7 +5311,8 @@ paths:
                                 videoAsset:
                                     type: string
                                 previousItem:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The item after which to insert the new video; if null, adds to the end
                             required:
                                 - playlistId
                                 - videoAsset
@@ -4919,7 +5357,8 @@ paths:
                                     type: string
                                     description: The end time for the schedule item (timecode format)
                                 previousItem:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The previous schedule item (for ordering)
                                 timeCode:
                                     type: string
                                     description: The start time for the schedule item (timecode format)
@@ -4969,7 +5408,8 @@ paths:
                                     type: object
                                     description: The live channel object to use as the source
                                 previousItem:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The previous schedule item (for ordering)
                                 timeCode:
                                     type: string
                                     description: The start time for the schedule item (timecode format)
@@ -5019,7 +5459,8 @@ paths:
                                     type: object
                                     description: The playlist schedule object to use as the source
                                 previousItem:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The previous schedule item (for ordering)
                                 timeCode:
                                     type: string
                                     description: The start time for the schedule item (timecode format)
@@ -5059,7 +5500,7 @@ paths:
                                 collections:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/CollectionRef'
+                                        type: object
                                     description: Array of collection filters for content selection
                                 days:
                                     type: integer
@@ -5077,7 +5518,8 @@ paths:
                                     type: string
                                     description: The end time for the schedule item (timecode format)
                                 previousItem:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The previous schedule item (for ordering)
                                 relatedContents:
                                     type: string
                                 searchDate:
@@ -5092,7 +5534,7 @@ paths:
                                 tags:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/TagRef'
+                                        type: object
                                     description: Array of tag filters for content selection
                                 timeCode:
                                     type: string
@@ -5439,7 +5881,8 @@ paths:
                                     type: string
                                     description: The unique identifier of the schedule item to move
                                 previousItem:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The item after which to place the moved item; if null, moves to the beginning
                             required:
                                 - scheduleId
                                 - itemId
@@ -5573,7 +6016,7 @@ paths:
                                 collections:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/CollectionRef'
+                                        type: object
                                     description: The collections to filter content by; pass empty array to keep current
                                 endSearchDate:
                                     type: string
@@ -5598,10 +6041,11 @@ paths:
                                 tags:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/TagRef'
+                                        type: object
                                     description: The tags to filter content by; pass empty array to keep current
                                 thumbnailAsset:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The thumbnail asset for the playlist; pass null to keep current
                             required:
                                 - scheduleId
                                 - collections
@@ -5648,7 +6092,8 @@ paths:
                                     type: string
                                     description: The display name for the schedule; pass null to keep current
                                 thumbnailAsset:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The thumbnail asset; pass null to keep current
                                 timeZoneId:
                                     type: string
                                     description: The time zone identifier; pass null to keep current
@@ -5695,7 +6140,8 @@ paths:
                                     type: string
                                     description: The display name for the playlist; pass null to keep current
                                 thumbnailAsset:
-                                    $ref: '#/components/schemas/CollectionRef'
+                                    type: object
+                                    description: The thumbnail asset; pass null to keep current
                             required:
                                 - scheduleId
                                 - defaultVideoAsset
@@ -5930,7 +6376,7 @@ paths:
                                 collections:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/CollectionRef'
+                                        type: object
                                     description: Array of collection filters for content selection
                                 days:
                                     type: integer
@@ -5963,7 +6409,7 @@ paths:
                                 tags:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/TagRef'
+                                        type: object
                                     description: Array of tag filters for content selection
                                 timeCode:
                                     type: string
@@ -7166,7 +7612,7 @@ paths:
                                 contents:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/ContentRef'
+                                        type: object
                                     description: Array of content objects to remove, each with an id property
                             required:
                                 - contentGroupId
@@ -7747,7 +8193,7 @@ paths:
                                 sortFields:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/SortField'
+                                        type: object
                                     description: Optional array of sort field objects
                                 offset:
                                     type: string
@@ -7925,7 +8371,7 @@ paths:
                                 mediaBuilderItems:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/MediaBuilderItem'
+                                        type: object
                                     description: Array of item objects to add to the composition
                             required:
                                 - mediaBuilderId
@@ -8297,18 +8743,24 @@ paths:
                                 bookmarked:
                                     type: boolean
                                     description: Whether the saved search is bookmarked
+                                public:
+                                    type: boolean
+                                    description: Whether the saved search is visible to all users
                                 sequence:
                                     type: integer
                                     description: The display order sequence number
+                                savedSearchType:
+                                    type: integer
+                                    description: The display type (0 = List, 1 = Preview Image, 2 = Header)
                                 query:
                                     type: string
                                     description: The search query string (maps to searchTerms)
                                 offset:
                                     type: integer
-                                    description: The page offset for pagination (defaults to 0)
+                                    description: The page offset for pagination (stored in criteria, defaults to 0)
                                 size:
                                     type: integer
-                                    description: The page size for results (defaults to 10)
+                                    description: The page size for results (stored in criteria, defaults to 10)
                                 filters:
                                     type: object
                                     description: Filter object to apply to the search (maps to advanceSearchFilters)
@@ -8319,24 +8771,26 @@ paths:
                                     type: array
                                     items:
                                         type: string
-                                    description: Array of field names to include in results
+                                    description: Array of field names to include in results (stored in criteria)
                                 similarAssetId:
                                     type: string
-                                    description: The ID of an asset to find similar results for
+                                    description: The ID of an asset to find similar results for (stored in criteria)
                                 minScore:
                                     type: integer
-                                    description: The minimum relevance score threshold for results
+                                    description: The minimum relevance score threshold for results (stored in criteria)
                                 excludeTotalRecordCount:
                                     type: boolean
-                                    description: Whether to exclude the total record count from results
+                                    description: Whether to exclude the total record count (stored in criteria)
                                 filterBinder:
                                     type: string
-                                    description: 'The logical binder for combining filters (e.g., "AND", "OR")'
+                                    description: The logical binder for combining filters (stored in criteria)
                             required:
                                 - name
                                 - featured
                                 - bookmarked
+                                - public
                                 - sequence
+                                - savedSearchType
                                 - query
                                 - offset
                                 - size
@@ -8454,12 +8908,12 @@ paths:
                                 filters:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/SearchFilter'
+                                        type: object
                                     description: Array of filter objects to apply to the search
                                 sortFields:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/SortField'
+                                        type: object
                                     description: Array of sort field objects for ordering results
                                 searchResultFields:
                                     type: array
@@ -8604,11 +9058,12 @@ paths:
                                 public:
                                     type: boolean
                                     description: Whether the saved search is publicly visible
-                                type:
-                                    type: string
-                                    description: The type of the saved search
                                 sequence:
-                                    type: string
+                                    type: integer
+                                    description: The display order sequence number
+                                type:
+                                    type: integer
+                                    description: The display type (0 = List, 1 = Preview Image, 2 = Header)
                                 query:
                                     type: string
                                     description: The search query string
@@ -8621,12 +9076,12 @@ paths:
                                 filters:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/SearchFilter'
+                                        type: object
                                     description: Array of filter objects to apply to the search
                                 sortFields:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/SortField'
+                                        type: object
                                     description: Array of sort field objects for ordering results
                                 searchResultFields:
                                     type: array
@@ -8651,8 +9106,8 @@ paths:
                                 - featured
                                 - bookmarked
                                 - public
-                                - type
                                 - sequence
+                                - type
                                 - query
                                 - offset
                                 - size
@@ -8756,7 +9211,7 @@ paths:
                                 sharedContents:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/ContentRef'
+                                        type: object
                                     description: Array of content objects included in the share
                                 sharedDuration:
                                     type: object
@@ -8858,12 +9313,12 @@ paths:
                                 nomadUsers:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/NomadUser'
+                                        type: object
                                     description: Array of Nomad user objects to notify
                                 externalUsers:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/ExternalUser'
+                                        type: object
                                     description: Array of external user objects to notify
                             required:
                                 - shareId
@@ -8905,7 +9360,7 @@ paths:
                                 sharedContents:
                                     type: array
                                     items:
-                                        $ref: '#/components/schemas/ContentRef'
+                                        type: object
                                     description: Array of content objects included in the share
                                 sharedDuration:
                                     type: object
@@ -8982,8 +9437,7 @@ paths:
                                     type: string
                                     description: 'The tracking event type (e.g., "play", "pause", "complete")'
                                 seconds:
-                                    type: integer
-                                    description: The current playback position in seconds
+                                    type: string
                                 liveChannelId:
                                     type: string
                                     description: The live channel ID if tracking a live stream
