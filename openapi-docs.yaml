@@ -340,7 +340,7 @@ paths:
                                     description: Audio track configuration for the clip
                                 useHlsSegmentBasedClipping:
                                     type: boolean
-                                    description: Request HLS segment-based clipping (faster, may be less frame-accurate)
+                                    description: When true, requests the HLS manifest-rewrite clipping path (trims and re-references existing HLS segments) instead of a full MediaConvert transcode. The server must also have this feature enabled for the tenant; if it is not, the request silently falls back to the standard MediaConvert clip.
                             required:
                                 - assetId
                                 - startTimeCode
@@ -395,7 +395,8 @@ paths:
                                     type: string
                                     description: The schema name for the assets
                                 resolverExempt:
-                                    type: string
+                                    type: boolean
+                                    description: Whether the copy is exempt from resolver processing
                             required:
                                 - assetIds
                                 - destinationFolderId
@@ -592,6 +593,7 @@ paths:
                                     description: The unique identifier of the video asset
                                 timeCode:
                                     type: string
+                                    description: 'The timecode at which to capture the screenshot (e.g., "00:01:30:00")'
                             required:
                                 - assetId
                                 - timeCode
@@ -869,6 +871,7 @@ paths:
                             properties:
                                 assetId:
                                     type: string
+                                    description: The unique identifier of the parent asset
                                 folderId:
                                     type: string
                                     description: The folder ID to filter results
@@ -1233,8 +1236,10 @@ paths:
                                     type: string
                                     description: The unique identifier of the asset to restore
                                 profile:
-                                    type: object
-                                    description: The restore profile configuration
+                                    type: array
+                                    items:
+                                        type: string
+                                    description: The restore profile name(s) to use; a single name is sent as a one-item `restoreProfileNames` list
                             required:
                                 - assetId
                                 - profile
@@ -1281,7 +1286,8 @@ paths:
                                     type: string
                                     description: The schema name
                                 resolverExempt:
-                                    type: string
+                                    type: boolean
+                                    description: Whether the move is exempt from resolver processing
                             required:
                                 - assetId
                                 - destinationFolderId
@@ -1376,17 +1382,18 @@ paths:
                                     description: The S3 object key path
                                 eTag:
                                     type: string
-                                tags:
+                                    description: The ETag of the storage object
+                                tagIds:
                                     type: array
                                     items:
                                         type: string
                                     description: Tags to assign to the asset
-                                collections:
+                                collectionIds:
                                     type: array
                                     items:
                                         type: string
                                     description: Collections to add the asset to
-                                relatedContents:
+                                relatedContentIds:
                                     type: array
                                     items:
                                         type: string
@@ -1421,6 +1428,9 @@ paths:
                                 deleteMissingAsset:
                                     type: boolean
                                     description: Whether to delete asset records for missing storage objects
+                                customAttributes:
+                                    type: object
+                                    description: Custom attribute key-value pairs to store on the asset
                             required:
                                 - assetId
                                 - parentId
@@ -1428,9 +1438,9 @@ paths:
                                 - bucketName
                                 - objectKey
                                 - eTag
-                                - tags
-                                - collections
-                                - relatedContents
+                                - tagIds
+                                - collectionIds
+                                - relatedContentIds
                                 - sequencer
                                 - assetStatus
                                 - storageClass
@@ -1441,6 +1451,7 @@ paths:
                                 - storageSourceIpAddress
                                 - startMediaProcessor
                                 - deleteMissingAsset
+                                - customAttributes
             responses:
                 '200':
                     description: Success
@@ -1838,14 +1849,23 @@ paths:
                             properties:
                                 assetId:
                                     type: string
+                                    description: The unique identifier of the asset
                                 inheritSecurity:
-                                    type: string
+                                    type: boolean
+                                    description: Whether the asset inherits security from its parent
                                 securityGroups:
-                                    type: string
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: Security groups to grant access
                                 securityUsers:
-                                    type: string
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: Individual users to grant access
                                 clearPublicExpirationDate:
-                                    type: string
+                                    type: boolean
+                                    description: Whether to clear the public expiration date
                             required:
                                 - assetId
                                 - inheritSecurity
@@ -1925,8 +1945,49 @@ paths:
             responses:
                 '200':
                     description: Success
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    $ref: '#/components/schemas/Transfer'
                 '400':
                     description: No asset ids were provided
+                '401':
+                    description: The caller is not authenticated
+
+    /addUploadsToQueue:
+        post:
+            summary: 'Add one or more files to the caller''s upload queue'
+            operationId: addUploadsToQueue
+            description: 'Starts a client upload for each file. Small batches are started inline and a transfer is returned for each; larger batches are handed to a background worker and an empty array is returned immediately - poll `getTransfersSummary` to see the entries appear. This only registers the uploads: fetch each one''s pre-signed part URLs with `getTransfer("uploads", id)` once its id is known, then send the bytes.'
+            tags:
+                - Asset Queue
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                items:
+                                    type: array
+                                    items:
+                                        $ref: '#/components/schemas/UploadQueueItem'
+                                    description: The files to queue, one entry per file
+                            required:
+                                - items
+            responses:
+                '200':
+                    description: Success
+                    content:
+                        application/json:
+                            schema:
+                                type: array
+                                items:
+                                    $ref: '#/components/schemas/Transfer'
+                '400':
+                    description: No upload items were provided
                 '401':
                     description: The caller is not authenticated
 
@@ -1934,7 +1995,7 @@ paths:
         get:
             summary: 'List the caller''s asset transfers, newest first'
             operationId: getTransfers
-            description: 'Returns one page of the caller''s own transfers, optionally filtered by direction and status. By default both directions are included and merged in date order. Pagination uses an opaque cursor: pass the `nextPageOffset` from a response back as `CURSOR` to continue; a null `nextPageOffset` means the end has been reached. `totalItemCount` is always -1.'
+            description: 'Returns one page of the caller''s own transfers, optionally filtered by direction and status. By default both directions are included and merged in date order. Pagination uses an opaque cursor: pass the `nextPageOffset` from a response back as `CURSOR` to continue; a null `nextPageOffset` means the end has been reached. `totalItemCount` is the number of transfers matching the direction and status filters; it is approximate for very large histories.'
             tags:
                 - Asset Queue
             requestBody:
@@ -1960,13 +2021,21 @@ paths:
                                     description: The opaque `nextPageOffset` cursor returned by a previous call
                                 oldestFirst:
                                     type: boolean
-                                    description: Whether to return the oldest transfers first
+                                    description: Whether to return the oldest transfers first. Ignored when `SORT_BY` is set
+                                sortBy:
+                                    type: string
+                                    description: 'A field to sort by instead of date, e.g. "queueDate", "transferStatus" or "assetTitle"'
+                                sortDescending:
+                                    type: boolean
+                                    description: Whether to sort `SORT_BY` descending. Defaults to ascending
                             required:
                                 - direction
                                 - statuses
                                 - pageSize
                                 - cursor
                                 - oldestFirst
+                                - sortBy
+                                - sortDescending
             responses:
                 '200':
                     description: Success
@@ -2031,6 +2100,33 @@ paths:
                 '401':
                     description: The caller is not authenticated
 
+    /clearTransferHistory:
+        delete:
+            summary: 'Remove all of the caller''s transfer history'
+            operationId: clearTransferHistory
+            description: The server pages through every transfer owned by the caller and deletes them all; no transfer ids are needed. This removes the bookkeeping only - it does not cancel work in flight, so cancel active transfers first if that is the intent. To remove specific transfers, use `deleteTransfers`.
+            tags:
+                - Asset Queue
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                direction:
+                                    type: string
+                                    description: 'Which side to clear: "Upload", "Download", or "All". Defaults to both'
+                            required:
+                                - direction
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+                '401':
+                    description: The caller is not authenticated
+
     /getTransfer:
         get:
             summary: 'Fetch a single transfer from the caller''s queue'
@@ -2048,12 +2144,12 @@ paths:
                                 direction:
                                     type: string
                                     description: 'The transfer direction path segment: "uploads" or "downloads"'
-                                id:
+                                transferId:
                                     type: string
                                     description: The unique identifier (UUID) of the transfer
                             required:
                                 - direction
-                                - id
+                                - transferId
             responses:
                 '200':
                     description: Success
@@ -2085,7 +2181,7 @@ paths:
                                 direction:
                                     type: string
                                     description: 'The transfer direction path segment: "uploads" or "downloads"'
-                                id:
+                                transferId:
                                     type: string
                                     description: The unique identifier (UUID) of the transfer
                                 transferStatus:
@@ -2100,13 +2196,17 @@ paths:
                                 errorMessage:
                                     type: string
                                     description: 'The failure reason. Only read alongside the "Error" status'
+                                bytesTotal:
+                                    type: integer
+                                    description: 'The total size in bytes, when known to the client. Downloads only: lets the server derive a percentage from `BYTES_TRANSFERRED`. Set once; later values are ignored'
                             required:
                                 - direction
-                                - id
+                                - transferId
                                 - transferStatus
                                 - completePercentage
                                 - bytesTransferred
                                 - errorMessage
+                                - bytesTotal
             responses:
                 '200':
                     description: Success
@@ -2138,12 +2238,12 @@ paths:
                                 direction:
                                     type: string
                                     description: 'The transfer direction path segment: "uploads" or "downloads"'
-                                id:
+                                transferId:
                                     type: string
                                     description: The unique identifier (UUID) of the transfer to cancel
                             required:
                                 - direction
-                                - id
+                                - transferId
             responses:
                 '200':
                     description: Success
@@ -2175,12 +2275,12 @@ paths:
                                 direction:
                                     type: string
                                     description: 'The transfer direction path segment: "uploads" or "downloads"'
-                                id:
+                                transferId:
                                     type: string
                                     description: The unique identifier (UUID) of the transfer to requeue
                             required:
                                 - direction
-                                - id
+                                - transferId
             responses:
                 '200':
                     description: Success
@@ -2213,6 +2313,7 @@ paths:
                             properties:
                                 contentId:
                                     type: string
+                                    description: The unique identifier of the asset to update
                                 name:
                                     type: string
                                     description: New name for the asset
@@ -2286,7 +2387,7 @@ paths:
         post:
             summary: Add a tag or collection to a content item
             operationId: addTagOrCollection
-            description: Associates an existing tag or collection with a content item. Can also create a new tag/collection if CREATE_NEW is true. The TYPE parameter determines whether a tag or collection is being added. The endpoint varies by API type (admin vs portal).
+            description: Associates an existing tag or collection with a content item. Can also create a new tag/collection if CREATE_NEW is true. The TAG_TYPE parameter determines whether a tag or collection is being added. The endpoint varies by API type (admin vs portal).
             tags:
                 - Content Metadata
             requestBody:
@@ -2296,7 +2397,7 @@ paths:
                         schema:
                             type: object
                             properties:
-                                type:
+                                tagType:
                                     type: string
                                     description: 'The type of metadata: "tag" or "collection"'
                                 contentId:
@@ -2315,7 +2416,7 @@ paths:
                                     type: boolean
                                     description: 'Whether to create a new tag/collection if it doesn''t exist'
                             required:
-                                - type
+                                - tagType
                                 - contentId
                                 - contentDefinition
                                 - tagName
@@ -2384,7 +2485,7 @@ paths:
         post:
             summary: Create a new tag or collection
             operationId: createTagOrCollection
-            description: Creates a new standalone tag or collection with the specified name. The TYPE parameter determines whether a tag or collection is created.
+            description: Creates a new standalone tag or collection with the specified name. The TAG_TYPE parameter determines whether a tag or collection is created.
             tags:
                 - Content Metadata
             requestBody:
@@ -2394,14 +2495,14 @@ paths:
                         schema:
                             type: object
                             properties:
-                                type:
+                                tagType:
                                     type: string
                                     description: 'The type of metadata to create: "tag" or "collection"'
                                 tagName:
                                     type: string
                                     description: The name for the new tag or collection
                             required:
-                                - type
+                                - tagType
                                 - tagName
             responses:
                 '200':
@@ -2460,14 +2561,14 @@ paths:
                         schema:
                             type: object
                             properties:
-                                type:
+                                tagType:
                                     type: string
                                     description: 'The type of metadata to delete: "tag" or "collection"'
                                 tagId:
                                     type: string
                                     description: The unique identifier of the tag or collection to delete
                             required:
-                                - type
+                                - tagType
                                 - tagId
             responses:
                 '200':
@@ -2493,15 +2594,15 @@ paths:
                         schema:
                             type: object
                             properties:
-                                type:
+                                tagType:
                                     type: string
                                     description: 'The type of metadata to retrieve: "tag" or "collection"'
-                                id:
+                                tagId:
                                     type: string
                                     description: The unique identifier of the tag or collection
                             required:
-                                - type
-                                - id
+                                - tagType
+                                - tagId
             responses:
                 '200':
                     description: Success
@@ -2526,21 +2627,22 @@ paths:
                         schema:
                             type: object
                             properties:
-                                type:
+                                tagType:
                                     type: string
                                     description: 'The type of metadata: "tag" or "collection"'
                                 contentId:
                                     type: string
                                     description: The ID of the content item
-                                contentDefinition:
+                                contentDefinitionId:
                                     type: string
+                                    description: The content definition ID
                                 tagId:
                                     type: string
                                     description: The ID of the tag or collection to remove
                             required:
-                                - type
+                                - tagType
                                 - contentId
-                                - contentDefinition
+                                - contentDefinitionId
                                 - tagId
             responses:
                 '200':
@@ -2566,10 +2668,15 @@ paths:
                         schema:
                             type: object
                             properties:
-                                includeHeaders:
+                                applicationId:
                                     type: string
+                                    description: Optional application identifier to associate with the ping
+                                userSessionId:
+                                    type: string
+                                    description: The user session ID to validate
                             required:
-                                - includeHeaders
+                                - applicationId
+                                - userSessionId
             responses:
                 '200':
                     description: Success
@@ -2737,112 +2844,6 @@ paths:
 
 
     # ── Asset Upload ──
-    /uploadAsset:
-        post:
-            summary: Start a new asset upload session
-            operationId: uploadAsset
-            description: Initiates a multipart upload by registering the file metadata with the server. Returns pre-signed URLs for each upload part. The file is split into 8 MB chunks (8388608 bytes) for multipart upload.
-            tags:
-                - Asset Upload
-            requestBody:
-                required: true
-                content:
-                    application/json:
-                        schema:
-                            type: object
-                            properties:
-                                name:
-                                    type: string
-                                    nullable: true
-                                    description: The name of the asset.
-                                existingAssetId:
-                                    type: string
-                                    nullable: true
-                                    description: The Existing AssetId (file) that should be overwritten with this upload. Note that by specifying this attribute then the parentId, relativePath and displayName are all ignored.
-                                relatedContentId:
-                                    type: string
-                                    nullable: true
-                                    description: The Content ID of the related content record to associate this asset to. Note that by specifying this attribute then the parentId and relativePath attributes are both ignored.
-                                uploadOverwriteOption:
-                                    type: string
-                                    description: The overwrite option for the upload. The option you want to use when uploading the asset. The options are continue, replace, and cancel. Continue continues the upload from where it left off. Replace replaces an existing asset. Replace is the one you want to use if you are starting a new upload. Cancel cancels an uploading asset.
-                                file:
-                                    type: string
-                                    format: binary
-                                    description: The FILE object or full or relative path of the file to upload. This is ignored if the ExistingAssetId or if the RelatedContentId has a value.
-                                parentId:
-                                    type: string
-                                    nullable: true
-                                    description: The Parent AssetId (folder) to add the upload to. Note that if there is a full relativePath, then it is appended to this parent path. If this value is omitted then the file will be added to the predefined incoming folder. This is ignored if the ExistingAssetId or if the RelatedContentId has a value.
-                                languageId:
-                                    type: string
-                                    nullable: true
-                                    description: The language of the asset to upload. If this is left blank then the default system language is used.
-                                uploadReplaceOptions:
-                                    type: array
-                                    nullable: true
-                                    items:
-                                        type: string
-                                    description: Gets or sets if the asset already exists on the server, this decides how to handle the situation with related assets.
-                            required:
-                                - uploadOverwriteOption
-                                - file
-            responses:
-                '200':
-                    description: Success
-                '400':
-                    description: Invalid parameters provided
-                '401':
-                    description: The caller is not authenticated
-
-    /uploadRelatedAsset:
-        post:
-            summary: Start an upload session for a related asset
-            operationId: uploadRelatedAsset
-            description: Initiates a multipart upload for a file that will be associated as a related asset (e.g., subtitle track, alternate language version) to an existing asset. Uses 8 MB chunk size (8388608 bytes) for multipart upload.
-            tags:
-                - Asset Upload
-            requestBody:
-                required: true
-                content:
-                    application/json:
-                        schema:
-                            type: object
-                            properties:
-                                existingAssetId:
-                                    type: string
-                                    description: Gets or sets the Existing AssetId (file) that should be overwritten with this upload. Note that by specifying this attribute then the parentId, relativePath and displayName are all ignored.
-                                relatedAssetId:
-                                    type: string
-                                    nullable: true
-                                    description: 'Gets or sets the related asset ID of the existingAsset that we''re replacing. If this is used, most of the other properties are not needed.'
-                                newRelatedAssetMetadataType:
-                                    type: string
-                                    nullable: true
-                                    description: Gets or sets the type of the related asset metadata to be created for a given ExistingAssetId. If specified, ExistingAssetId has to have a value defined.
-                                uploadOverwriteOption:
-                                    type: string
-                                    description: The overwrite option for the upload. The option you want to use when uploading the asset. The options are continue, replace, and cancel. Continue continues the upload from where it left off. Replace replaces an existing asset. Replace is the one you want to use if you are starting a new upload.
-                                file:
-                                    type: string
-                                    format: binary
-                                    description: The FILE object or full or relative path of the file to upload. This is ignored if the ExistingAssetId or if the RelatedContentId has a value
-                                languageId:
-                                    type: string
-                                    nullable: true
-                                    description: The language of the asset to upload. If this is left blank then the default system language is used.
-                            required:
-                                - existingAssetId
-                                - uploadOverwriteOption
-                                - file
-            responses:
-                '200':
-                    description: Success
-                '400':
-                    description: Invalid parameters provided
-                '401':
-                    description: The caller is not authenticated
-
     /reapStaleUploads:
         post:
             summary: Reclaim uploads that have stopped making progress
@@ -2964,9 +2965,9 @@ paths:
     # ── Content ──
     /createContent:
         get:
-            summary: Create a new empty content model template for a given content definition
+            summary: Create a new content record for a given content definition
             operationId: createContent
-            description: Generates a blank content record template with the specified content definition and language, ready for the user to populate with data.
+            description: Creates a content record with the specified content definition and language. When `PROPERTIES` is given, they are saved to the new record straight away.
             tags:
                 - Content
             requestBody:
@@ -2981,9 +2982,10 @@ paths:
                                     description: The ID of the content definition
                                 languageId:
                                     type: string
-                                    description: The language ID for the content template
+                                    description: The language ID for the content
                                 properties:
-                                    type: string
+                                    type: object
+                                    description: Property values to save to the new record
                             required:
                                 - contentDefinitionId
                                 - languageId
@@ -3139,7 +3141,8 @@ paths:
                                     type: integer
                                     description: The page index for pagination (zero-based)
                                 pageSize:
-                                    type: string
+                                    type: integer
+                                    description: The number of items per page
                             required:
                                 - contentId
                                 - contentDefinitionId
@@ -3260,6 +3263,7 @@ paths:
                             properties:
                                 contentDefinitionId:
                                     type: string
+                                    description: The unique identifier of the content definition
                             required:
                                 - contentDefinitionId
             responses:
@@ -3331,6 +3335,7 @@ paths:
                             properties:
                                 contentDefinitionId:
                                     type: string
+                                    description: The unique identifier of the content definition to update
                                 name:
                                     type: string
                                     description: The display name for the content definition (null to keep existing)
@@ -3456,7 +3461,8 @@ paths:
                                     type: object
                                     description: The series configuration if this is a recurring event
                                 isDisabled:
-                                    type: string
+                                    type: boolean
+                                    description: Whether the event is disabled
                                 overrideSeriesProperties:
                                     type: boolean
                                     description: Whether to override inherited series properties
@@ -3486,7 +3492,7 @@ paths:
         delete:
             summary: Delete an event
             operationId: deleteEvent
-            description: Permanently removes an event and its associated content by ID and content definition.
+            description: Permanently removes an event and its associated content by CONTENT_ID and content definition.
             tags:
                 - Event
             requestBody:
@@ -3498,6 +3504,7 @@ paths:
                             properties:
                                 contentId:
                                     type: string
+                                    description: The content ID of the event to delete
                                 contentDefinitionId:
                                     type: string
                                     description: The content definition ID of the event
@@ -3544,7 +3551,8 @@ paths:
                                     type: boolean
                                     description: Whether the output stream is secure
                                 archiveFolder:
-                                    type: string
+                                    type: object
+                                    description: The archive folder asset for recordings
                                 primaryLiveInput:
                                     type: object
                                     description: The primary live input configuration
@@ -3746,20 +3754,32 @@ paths:
                             properties:
                                 bucketName:
                                     type: string
+                                    description: The S3 bucket name containing the source media
                                 objectKey:
                                     type: string
+                                    description: The S3 object key for the source media file
                                 notificationCallbackUrl:
                                     type: string
+                                    description: URL to receive job completion notifications
                                 externalId:
                                     type: string
+                                    description: External system identifier for tracking the job
                                 replaceExistingJob:
-                                    type: string
+                                    type: boolean
+                                    description: Whether to replace an existing job with the same external ID
                                 assetUrl:
                                     type: string
+                                    description: Direct URL to the source media (alternative to S3)
                                 requestedTasks:
-                                    type: string
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: Array of task objects to execute
                                 requestedTranscodeProfiles:
-                                    type: string
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: Array of transcode profile objects to apply
                             required:
                                 - bucketName
                                 - objectKey
@@ -3793,10 +3813,13 @@ paths:
                             properties:
                                 assetId:
                                     type: string
+                                    description: The unique identifier of the asset
                                 jobResultsUrl:
                                     type: string
+                                    description: Callback URL for job results
                                 externalId:
                                     type: string
+                                    description: External system identifier for the job
                             required:
                                 - assetId
                                 - jobResultsUrl
@@ -3829,6 +3852,7 @@ paths:
                             properties:
                                 liveChannelId:
                                     type: string
+                                    description: The unique identifier of the live channel to clip
                                 startTimeCode:
                                     type: string
                                     description: The start time code for the clip
@@ -3924,11 +3948,12 @@ paths:
                                 isOutputScreenshots:
                                     type: boolean
                                     description: Whether to capture output screenshots
-                                type:
+                                channelType:
                                     type: string
                                     description: 'The channel type: "External", "IVS", "Normal", or "Realtime"'
                                 externalServiceApiUrl:
                                     type: string
+                                    description: 'The external service API URL (required if type is "External")'
                                 externalOutputProfiles:
                                     type: array
                                     items:
@@ -3947,7 +3972,7 @@ paths:
                                 - enableLiveClipping
                                 - isSecureOutput
                                 - isOutputScreenshots
-                                - type
+                                - channelType
                                 - externalServiceApiUrl
                                 - externalOutputProfiles
                                 - securityGroups
@@ -3963,7 +3988,7 @@ paths:
         delete:
             summary: Delete a live channel and optionally its associated live inputs
             operationId: deleteLiveChannel
-            description: Removes the specified live channel from the system. When DELETE_INPUTS is true, first retrieves all associated live input IDs and deletes each one before deleting the channel itself.
+            description: Removes the specified live channel from the system. When DELETE_LIVE_INPUTS is true, first retrieves all associated live input IDs and deletes each one before deleting the channel itself.
             tags:
                 - Live Channel
             requestBody:
@@ -3975,8 +4000,10 @@ paths:
                             properties:
                                 liveChannelId:
                                     type: string
+                                    description: The unique identifier of the live channel to delete
                                 deleteLiveInputs:
-                                    type: string
+                                    type: boolean
+                                    description: Whether to also delete the associated live inputs
                             required:
                                 - liveChannelId
                                 - deleteLiveInputs
@@ -4006,6 +4033,7 @@ paths:
                             properties:
                                 liveChannelId:
                                     type: string
+                                    description: The unique identifier of the live channel
                             required:
                                 - liveChannelId
             responses:
@@ -4064,6 +4092,7 @@ paths:
                             properties:
                                 liveChannelId:
                                     type: string
+                                    description: The unique identifier of the live channel
                             required:
                                 - liveChannelId
             responses:
@@ -4075,6 +4104,53 @@ paths:
                     description: The caller is not authenticated
                 '404':
                     description: The live channel was not found
+
+    /recordLiveChannelFromHlsArtifacts:
+        post:
+            summary: 'Assemble a VOD HLS recording from a live channel''s stored HLS artifacts'
+            operationId: recordLiveChannelFromHlsArtifacts
+            description: 'Scans the live channel''s Red5 HLS upload location for partitions that overlap the requested time window, aggregates the video and subtitle segments, writes an assembled VOD HLS master manifest and variant playlists, registers a placeholder asset, and queues the recording to be materialized. The live channel itself is not modified. For long windows, set `RUN_IN_BACKGROUND` to avoid gateway timeouts; the call then returns immediately with no body and the outcome is written to the audit log.'
+            tags:
+                - Live Channel
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                liveChannelId:
+                                    type: string
+                                    description: The unique identifier of the live channel
+                                recordingBaseFileName:
+                                    type: string
+                                    description: The base file name for the recording asset, without extension
+                                folderAssetId:
+                                    type: string
+                                    description: The folder the recording asset is registered in
+                                recordingStartDateTime:
+                                    type: string
+                                    description: The recording start, in UTC (ISO 8601)
+                                recordingDurationSeconds:
+                                    type: integer
+                                    description: The recording length in seconds
+                                runInBackground:
+                                    type: boolean
+                                    description: Whether to process asynchronously and return immediately. Defaults to false
+                            required:
+                                - liveChannelId
+                                - recordingBaseFileName
+                                - folderAssetId
+                                - recordingStartDateTime
+                                - recordingDurationSeconds
+                                - runInBackground
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: The channel is not a Red5 HLS channel, or no segments were found in the window
+                '401':
+                    description: The caller is not authenticated
 
     /startLiveChannel:
         post:
@@ -4092,6 +4168,7 @@ paths:
                             properties:
                                 liveChannelId:
                                     type: string
+                                    description: The unique identifier of the live channel to start
                                 waitForStart:
                                     type: boolean
                                     description: Whether to wait for the channel to reach Running status
@@ -4124,6 +4201,7 @@ paths:
                             properties:
                                 liveChannelId:
                                     type: string
+                                    description: The unique identifier of the live channel
                             required:
                                 - liveChannelId
             responses:
@@ -4152,6 +4230,7 @@ paths:
                             properties:
                                 liveChannelId:
                                     type: string
+                                    description: The unique identifier of the live channel to stop
                                 waitForStop:
                                     type: boolean
                                     description: Whether to wait for the channel to reach Idle status
@@ -4184,6 +4263,7 @@ paths:
                             properties:
                                 liveChannelId:
                                     type: string
+                                    description: The unique identifier of the live channel to update
                                 name:
                                     type: string
                                     description: The new display name for the channel
@@ -4203,12 +4283,14 @@ paths:
                                     type: boolean
                                     description: Whether the output stream is secure
                                 isOutputScreenshots:
-                                    type: string
-                                type:
+                                    type: boolean
+                                    description: Whether to capture output screenshots
+                                channelType:
                                     type: string
                                     description: 'The channel type: "External", "IVS", "Normal", or "Realtime"'
                                 externalServiceApiUrl:
                                     type: string
+                                    description: 'The external service API URL (for "External" type)'
                                 externalOutputProfiles:
                                     type: array
                                     items:
@@ -4228,7 +4310,7 @@ paths:
                                 - enableLiveClipping
                                 - isSecureOutput
                                 - isOutputScreenshots
-                                - type
+                                - channelType
                                 - externalServiceApiUrl
                                 - externalOutputProfiles
                                 - securityGroups
@@ -4292,8 +4374,8 @@ paths:
                                     description: The display name for the live input
                                 source:
                                     type: string
-                                    description: The source URL or CIDR block (usage depends on TYPE)
-                                type:
+                                    description: The source URL or CIDR block (usage depends on INPUT_TYPE)
+                                inputType:
                                     type: string
                                     description: 'The input type: "RTMP_PULL", "RTMP_PUSH", "RTP_PUSH", "UDP_PUSH", or "URL_PULL"'
                                 isStandard:
@@ -4315,7 +4397,7 @@ paths:
                             required:
                                 - name
                                 - source
-                                - type
+                                - inputType
                                 - isStandard
                                 - videoAssetId
                                 - destinations
@@ -4344,6 +4426,7 @@ paths:
                             properties:
                                 liveInputId:
                                     type: string
+                                    description: The unique identifier of the live input to delete
                             required:
                                 - liveInputId
             responses:
@@ -4372,6 +4455,7 @@ paths:
                             properties:
                                 liveInputId:
                                     type: string
+                                    description: The unique identifier of the live input
                             required:
                                 - liveInputId
             responses:
@@ -4415,13 +4499,14 @@ paths:
                             properties:
                                 liveInputId:
                                     type: string
+                                    description: The unique identifier of the live input to update
                                 name:
                                     type: string
                                     description: The new display name for the input
                                 source:
                                     type: string
                                     description: The new source URL or CIDR block
-                                type:
+                                inputType:
                                     type: string
                                     description: 'The input type: "RTMP_PULL", "RTMP_PUSH", "RTP_PUSH", "UDP_PUSH", or "URL_PULL"'
                                 isStandard:
@@ -4444,7 +4529,7 @@ paths:
                                 - liveInputId
                                 - name
                                 - source
-                                - type
+                                - inputType
                                 - isStandard
                                 - videoAssetId
                                 - destinations
@@ -4477,6 +4562,7 @@ paths:
                             properties:
                                 liveOperatorId:
                                     type: string
+                                    description: The unique identifier of the live operator
                             required:
                                 - liveOperatorId
             responses:
@@ -4505,6 +4591,7 @@ paths:
                             properties:
                                 liveOperatorId:
                                     type: string
+                                    description: The unique identifier of the live operator
                             required:
                                 - liveOperatorId
             responses:
@@ -4533,6 +4620,7 @@ paths:
                             properties:
                                 liveOperatorId:
                                     type: string
+                                    description: The unique identifier of the live operator
                                 relatedContentIds:
                                     type: array
                                     items:
@@ -4573,6 +4661,7 @@ paths:
                             properties:
                                 liveOperatorId:
                                     type: string
+                                    description: The unique identifier of the live operator
                             required:
                                 - liveOperatorId
             responses:
@@ -4601,6 +4690,7 @@ paths:
                             properties:
                                 liveOperatorId:
                                     type: string
+                                    description: The unique identifier of the live operator
                             required:
                                 - liveOperatorId
             responses:
@@ -4644,6 +4734,7 @@ paths:
                             properties:
                                 liveOperatorId:
                                     type: string
+                                    description: The unique identifier of the live operator
                                 prerollAssetId:
                                     type: string
                                     description: Asset ID to play before the live feed starts
@@ -4696,6 +4787,7 @@ paths:
                             properties:
                                 liveOperatorId:
                                     type: string
+                                    description: The unique identifier of the live operator
                             required:
                                 - liveOperatorId
             responses:
@@ -4724,6 +4816,7 @@ paths:
                             properties:
                                 liveOperatorId:
                                     type: string
+                                    description: The unique identifier of the live operator
                             required:
                                 - liveOperatorId
             responses:
@@ -4833,6 +4926,7 @@ paths:
                             properties:
                                 liveOutputId:
                                     type: string
+                                    description: The unique identifier of the output profile to delete
                             required:
                                 - liveOutputId
             responses:
@@ -4861,6 +4955,7 @@ paths:
                             properties:
                                 liveOutputId:
                                     type: string
+                                    description: The unique identifier of the live output profile
                             required:
                                 - liveOutputId
             responses:
@@ -4919,14 +5014,16 @@ paths:
                             properties:
                                 liveOutputId:
                                     type: string
+                                    description: The unique identifier of the output profile to update
                                 name:
                                     type: string
                                     description: The new display name
                                 outputType:
                                     type: object
                                     description: The new output type object
-                                isActive:
-                                    type: string
+                                enabled:
+                                    type: boolean
+                                    description: Whether the profile is enabled
                                 audioBitrate:
                                     type: integer
                                     description: The audio bitrate in bps
@@ -4964,7 +5061,7 @@ paths:
                                 - liveOutputId
                                 - name
                                 - outputType
-                                - isActive
+                                - enabled
                                 - audioBitrate
                                 - outputStreamKey
                                 - outputUrl
@@ -5136,7 +5233,7 @@ paths:
                                     description: The new display name
                                 isEnabled:
                                     type: boolean
-                                    description: Whether the group is enabled
+                                    description: Whether the group is enabled (retains existing value if not provided)
                                 manifestType:
                                     type: object
                                     description: The new manifest type configuration
@@ -5204,7 +5301,8 @@ paths:
                                     type: string
                                     description: The display name for the intelligent playlist
                                 relatedContents:
-                                    type: string
+                                    type: object
+                                    description: The related content filter criteria
                                 searchDate:
                                     type: string
                                     description: The start date for the content search range
@@ -5339,7 +5437,8 @@ paths:
                                     type: string
                                     description: The unique identifier of the playlist to add the video to
                                 videoAsset:
-                                    type: string
+                                    type: object
+                                    description: The video asset to add to the playlist
                                 previousItem:
                                     type: object
                                     description: The item after which to insert the new video; if null, adds to the end
@@ -5551,7 +5650,10 @@ paths:
                                     type: object
                                     description: The previous schedule item (for ordering)
                                 relatedContents:
-                                    type: string
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: Array of related content filters
                                 searchDate:
                                     type: string
                                     description: The start date for the search filter range
@@ -5979,10 +6081,14 @@ paths:
                                     description: The unique identifier of the schedule to start
                                 skipCleanupOnFailure:
                                     type: boolean
-                                    description: Whether to skip resource cleanup if the start fails; useful for debugging
+                                    description: Not read by the API; kept so existing callers keep working
+                                background:
+                                    type: boolean
+                                    description: Whether the server starts the schedule in the background and returns immediately. The API defaults to true
                             required:
                                 - scheduleId
                                 - skipCleanupOnFailure
+                                - background
             responses:
                 '200':
                     description: Success
@@ -5997,7 +6103,7 @@ paths:
         post:
             summary: Stop a schedule
             operationId: stopSchedule
-            description: Stops playback of a running schedule (playlist or intelligent schedule). The schedule will cease processing and outputting content. A force stop option is available to immediately halt the schedule without graceful shutdown.
+            description: Stops playback of a running schedule (playlist or intelligent schedule). The schedule will cease processing and outputting content.
             tags:
                 - Schedule
             requestBody:
@@ -6012,10 +6118,14 @@ paths:
                                     description: The unique identifier of the schedule to stop
                                 forceStop:
                                     type: boolean
-                                    description: Whether to forcefully stop the schedule without graceful shutdown
+                                    description: Not read by the API; kept so existing callers keep working
+                                background:
+                                    type: boolean
+                                    description: Whether the server stops the schedule in the background and returns immediately. The API defaults to true
                             required:
                                 - scheduleId
                                 - forceStop
+                                - background
             responses:
                 '200':
                     description: Success
@@ -6058,7 +6168,8 @@ paths:
                                     type: string
                                     description: The display name for the playlist; pass null to keep current
                                 relatedContents:
-                                    type: string
+                                    type: object
+                                    description: The related content filter criteria; pass 0 to keep current
                                 searchDate:
                                     type: string
                                     description: The start date for the content search range; pass null to keep current
@@ -6204,6 +6315,7 @@ paths:
                             properties:
                                 playlistId:
                                     type: string
+                                    description: The unique identifier of the parent playlist
                                 itemId:
                                     type: string
                                     description: The unique identifier of the playlist video item to update
@@ -6425,8 +6537,12 @@ paths:
                                     description: The end time for the schedule item
                                 previousItem:
                                     type: string
+                                    description: The ID of the item this item should follow (retains existing value if not provided)
                                 relatedContents:
-                                    type: string
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: Array of related content filters
                                 searchDate:
                                     type: string
                                     description: The start date for the search filter range
@@ -6486,7 +6602,7 @@ paths:
                         schema:
                             type: object
                             properties:
-                                channelId:
+                                liveChannelId:
                                     type: string
                                     description: The unique identifier of the live channel
                                 asset:
@@ -6502,7 +6618,7 @@ paths:
                                     type: string
                                     description: The ID of the schedule event after which this event should be placed
                             required:
-                                - channelId
+                                - liveChannelId
                                 - asset
                                 - isLoop
                                 - durationTimeCode
@@ -6531,13 +6647,13 @@ paths:
                         schema:
                             type: object
                             properties:
-                                channelId:
+                                liveChannelId:
                                     type: string
                                     description: The unique identifier of the live channel
-                                input:
+                                liveInput:
                                     type: object
                                     description: The primary live input object to schedule
-                                backupInput:
+                                backupLiveInput:
                                     type: object
                                     description: An optional backup live input for failover
                                 fixedOnAirTimeUtc:
@@ -6547,9 +6663,9 @@ paths:
                                     type: string
                                     description: The ID of the schedule event after which this event should be placed
                             required:
-                                - channelId
-                                - input
-                                - backupInput
+                                - liveChannelId
+                                - liveInput
+                                - backupLiveInput
                                 - fixedOnAirTimeUtc
                                 - previousId
             responses:
@@ -6576,14 +6692,14 @@ paths:
                         schema:
                             type: object
                             properties:
-                                channelId:
+                                liveChannelId:
                                     type: string
                                     description: The unique identifier of the live channel
                                 scheduleEventId:
                                     type: string
                                     description: The unique identifier of the schedule event to retrieve
                             required:
-                                - channelId
+                                - liveChannelId
                                 - scheduleEventId
             responses:
                 '200':
@@ -6609,14 +6725,14 @@ paths:
                         schema:
                             type: object
                             properties:
-                                channelId:
+                                liveChannelId:
                                     type: string
                                     description: The unique identifier of the live channel
                                 scheduleEventId:
                                     type: string
                                     description: The unique identifier of the schedule event to retrieve
                             required:
-                                - channelId
+                                - liveChannelId
                                 - scheduleEventId
             responses:
                 '200':
@@ -6642,7 +6758,7 @@ paths:
                         schema:
                             type: object
                             properties:
-                                channelId:
+                                liveChannelId:
                                     type: string
                                     description: The unique identifier of the live channel
                                 scheduleEventId:
@@ -6652,7 +6768,7 @@ paths:
                                     type: string
                                     description: The ID of the schedule event after which the moved event should be placed
                             required:
-                                - channelId
+                                - liveChannelId
                                 - scheduleEventId
                                 - previousScheduleEventId
             responses:
@@ -6679,14 +6795,14 @@ paths:
                         schema:
                             type: object
                             properties:
-                                channelId:
+                                liveChannelId:
                                     type: string
                                     description: The unique identifier of the live channel
                                 scheduleEventId:
                                     type: string
                                     description: The unique identifier of the asset schedule event to remove
                             required:
-                                - channelId
+                                - liveChannelId
                                 - scheduleEventId
             responses:
                 '200':
@@ -6712,14 +6828,14 @@ paths:
                         schema:
                             type: object
                             properties:
-                                channelId:
+                                liveChannelId:
                                     type: string
                                     description: The unique identifier of the live channel
                                 inputId:
                                     type: string
                                     description: The unique identifier of the input schedule event to remove
                             required:
-                                - channelId
+                                - liveChannelId
                                 - inputId
             responses:
                 '200':
@@ -6745,7 +6861,7 @@ paths:
                         schema:
                             type: object
                             properties:
-                                id:
+                                eventId:
                                     type: string
                                     description: The unique identifier of the schedule event to update
                                 channelId:
@@ -6760,15 +6876,12 @@ paths:
                                 durationTimeCode:
                                     type: string
                                     description: The updated duration timecode (retains existing value if unchanged)
-                                previousId:
-                                    type: string
                             required:
-                                - id
+                                - eventId
                                 - channelId
                                 - asset
                                 - isLoop
                                 - durationTimeCode
-                                - previousId
             responses:
                 '200':
                     description: Success
@@ -6793,13 +6906,13 @@ paths:
                         schema:
                             type: object
                             properties:
-                                id:
+                                eventId:
                                     type: string
                                     description: The unique identifier of the schedule event to update
                                 channelId:
                                     type: string
                                     description: The unique identifier of the live channel
-                                input:
+                                liveInput:
                                     type: object
                                     description: The updated primary live input object with id and name (retains existing value if unchanged)
                                 backupInput:
@@ -6809,9 +6922,9 @@ paths:
                                     type: string
                                     description: The updated fixed on-air time in UTC (retains existing value if unchanged)
                             required:
-                                - id
+                                - eventId
                                 - channelId
-                                - input
+                                - liveInput
                                 - backupInput
                                 - fixedOnAirTimeUtc
             responses:
@@ -6939,7 +7052,7 @@ paths:
                                 userId:
                                     type: string
                                     description: The unique identifier of the user
-                                id:
+                                uid:
                                     type: string
                                     description: The unique identifier of the security record
                                 keyName:
@@ -6953,7 +7066,7 @@ paths:
                                 - contentDefinitionId
                                 - email
                                 - userId
-                                - id
+                                - uid
                                 - keyName
                                 - expirationDate
             responses:
@@ -7188,11 +7301,12 @@ paths:
                                     type: string
                                     description: The content ID the tracking record belongs to
                                 videoTrackingAttributeId:
-                                    type: string
+                                    type: object
+                                    description: The video tracking attribute object
                                 userId:
                                     type: string
                                     description: The unique identifier of the user
-                                id:
+                                uid:
                                     type: string
                                     description: The unique identifier of the tracking record
                                 isFirstQuartile:
@@ -7233,7 +7347,7 @@ paths:
                                 - contentId
                                 - videoTrackingAttributeId
                                 - userId
-                                - id
+                                - uid
                                 - isFirstQuartile
                                 - isMidpoint
                                 - isThirdQuartile
@@ -7269,8 +7383,9 @@ paths:
                         schema:
                             type: object
                             properties:
-                                id:
+                                userSessionId:
                                     type: string
+                                    description: The unique identifier of the user session
                                 userSessionStatus:
                                     type: object
                                     description: The new session status object with id and description
@@ -7278,7 +7393,7 @@ paths:
                                     type: string
                                     description: The application ID the session belongs to
                             required:
-                                - id
+                                - userSessionId
                                 - userSessionStatus
                                 - applicationId
             responses:
@@ -7305,10 +7420,11 @@ paths:
                         schema:
                             type: object
                             properties:
-                                id:
+                                userSessionId:
                                     type: string
+                                    description: The unique identifier of the user session
                             required:
-                                - id
+                                - userSessionId
             responses:
                 '200':
                     description: Success
@@ -7335,11 +7451,11 @@ paths:
                         schema:
                             type: object
                             properties:
-                                email:
+                                newEmail:
                                     type: string
                                     description: The new email address for the user
                             required:
-                                - email
+                                - newEmail
             responses:
                 '200':
                     description: Success
@@ -7438,7 +7554,7 @@ paths:
                                     type: string
                                     nullable: true
                                     description: Phone number (null to keep current value)
-                                phoneExt:
+                                phoneExtension:
                                     type: string
                                     nullable: true
                                     description: Phone extension (null to keep current value)
@@ -7480,7 +7596,10 @@ paths:
                                     type: string
                                     description: The unique identifier of the content group
                                 contentIds:
-                                    type: string
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: Array of content objects to add, each with an id property
                             required:
                                 - contentGroupId
                                 - contentIds
@@ -7566,6 +7685,7 @@ paths:
                             properties:
                                 contentGroupId:
                                     type: string
+                                    description: The unique identifier of the content group
                             required:
                                 - contentGroupId
             responses:
@@ -7639,14 +7759,14 @@ paths:
                                 contentGroupId:
                                     type: string
                                     description: The unique identifier of the content group
-                                contents:
+                                contentIds:
                                     type: array
                                     items:
                                         type: object
                                     description: Array of content objects to remove, each with an id property
                             required:
                                 - contentGroupId
-                                - contents
+                                - contentIds
             responses:
                 '200':
                     description: Success
@@ -7996,6 +8116,7 @@ paths:
                             properties:
                                 contentId:
                                     type: string
+                                    description: The unique identifier of the media content
                             required:
                                 - contentId
             responses:
@@ -8039,6 +8160,7 @@ paths:
                             properties:
                                 dynamicContentRecordId:
                                     type: string
+                                    description: The unique identifier of the dynamic content
                             required:
                                 - dynamicContentRecordId
             responses:
@@ -8082,6 +8204,7 @@ paths:
                             properties:
                                 mediaGroupId:
                                     type: string
+                                    description: The unique identifier of the media group
                                 filterIds:
                                     type: array
                                     items:
@@ -8116,6 +8239,7 @@ paths:
                             properties:
                                 mediaItemId:
                                     type: string
+                                    description: The unique identifier of the media item
                             required:
                                 - mediaItemId
             responses:
@@ -8159,6 +8283,7 @@ paths:
                             properties:
                                 groupId:
                                     type: string
+                                    description: The unique identifier of the personal group
                             required:
                                 - groupId
             responses:
@@ -8187,6 +8312,7 @@ paths:
                             properties:
                                 siteConfigRecordId:
                                     type: string
+                                    description: The unique identifier of the site configuration
                             required:
                                 - siteConfigRecordId
             responses:
@@ -8214,7 +8340,8 @@ paths:
                             type: object
                             properties:
                                 query:
-                                    type: string
+                                    type: object
+                                    description: The search query object containing search criteria
                                 ids:
                                     type: array
                                     items:
@@ -8226,9 +8353,11 @@ paths:
                                         type: object
                                     description: Optional array of sort field objects
                                 offset:
-                                    type: string
+                                    type: integer
+                                    description: The page offset for pagination (defaults to 0)
                                 size:
-                                    type: string
+                                    type: integer
+                                    description: The number of results per page (defaults to 100)
                             required:
                                 - query
                                 - ids
@@ -8314,6 +8443,7 @@ paths:
                             properties:
                                 mediaBuilderId:
                                     type: string
+                                    description: The unique identifier of the media builder composition
                                 sourceAssetId:
                                     type: string
                                     description: The unique identifier of the source asset to add
@@ -8432,6 +8562,7 @@ paths:
                             properties:
                                 mediaBuilderId:
                                     type: string
+                                    description: The unique identifier of the media builder composition to delete
                             required:
                                 - mediaBuilderId
             responses:
@@ -8460,8 +8591,10 @@ paths:
                             properties:
                                 mediaBuilderId:
                                     type: string
+                                    description: The unique identifier of the media builder composition
                                 mediaBuilderItemId:
                                     type: string
+                                    description: The unique identifier of the item to delete
                             required:
                                 - mediaBuilderId
                                 - mediaBuilderItemId
@@ -8491,6 +8624,7 @@ paths:
                             properties:
                                 mediaBuilderId:
                                     type: string
+                                    description: The unique identifier of the media builder composition to duplicate
                                 name:
                                     type: string
                                     description: The name for the duplicated composition
@@ -8529,7 +8663,7 @@ paths:
 
     /getMediaBuilder:
         get:
-            summary: Retrieve a specific media builder composition by ID
+            summary: Retrieve a specific media builder composition by MEDIA_BUILDER_ID
             operationId: getMediaBuilder
             description: Gets the full details of a media builder composition including its name, destination folder, collections, related content, tags, and properties.
             tags:
@@ -8543,6 +8677,7 @@ paths:
                             properties:
                                 mediaBuilderId:
                                     type: string
+                                    description: The unique identifier of the media builder composition
                             required:
                                 - mediaBuilderId
             responses:
@@ -8615,6 +8750,7 @@ paths:
                             properties:
                                 mediaBuilderId:
                                     type: string
+                                    description: The unique identifier of the media builder composition
                             required:
                                 - mediaBuilderId
             responses:
@@ -8631,7 +8767,7 @@ paths:
         post:
             summary: Move an item within a media builder composition
             operationId: moveMediaBuilderItem
-            description: 'Repositions the specified item in the composition''s sequence by placing it after the item identified by PREVIOUS_ID.'
+            description: 'Repositions the specified item in the composition''s sequence by placing it after the item identified by MEDIA_BUILDER_PREVIOUS_ITEM_ID.'
             tags:
                 - Media Builder
             requestBody:
@@ -8643,15 +8779,17 @@ paths:
                             properties:
                                 mediaBuilderId:
                                     type: string
-                                itemId:
+                                    description: The unique identifier of the media builder composition
+                                mediaBuilderItemId:
                                     type: string
                                     description: The unique identifier of the item to move
-                                previousItemId:
+                                mediaBuilderPreviousItemId:
                                     type: string
+                                    nullable: true
+                                    description: The ID of the item that should precede the moved item, or null to move to the beginning
                             required:
                                 - mediaBuilderId
-                                - itemId
-                                - previousItemId
+                                - mediaBuilderItemId
             responses:
                 '200':
                     description: Success
@@ -8678,6 +8816,7 @@ paths:
                             properties:
                                 mediaBuilderId:
                                     type: string
+                                    description: The unique identifier of the media builder composition to render
                             required:
                                 - mediaBuilderId
             responses:
@@ -8706,6 +8845,7 @@ paths:
                             properties:
                                 mediaBuilderId:
                                     type: string
+                                    description: The unique identifier of the media builder composition to update
                                 name:
                                     type: string
                                     nullable: true
@@ -8843,7 +8983,7 @@ paths:
         delete:
             summary: Delete a saved search
             operationId: deleteSavedSearch
-            description: Permanently removes a saved search identified by its ID.
+            description: Permanently removes a saved search identified by its SAVED_SEARCH_ID.
             tags:
                 - Saved Search
             requestBody:
@@ -8853,11 +8993,11 @@ paths:
                         schema:
                             type: object
                             properties:
-                                id:
+                                savedSearchId:
                                     type: string
                                     description: The unique identifier of the saved search to delete
                             required:
-                                - id
+                                - savedSearchId
             responses:
                 '200':
                     description: Success
@@ -8870,7 +9010,7 @@ paths:
 
     /getSavedSearch:
         get:
-            summary: Get a saved search by ID
+            summary: Get a saved search by SAVED_SEARCH_ID
             operationId: getSavedSearch
             description: Retrieves the details of a specific saved search, including its name, visibility settings, and search criteria.
             tags:
@@ -8882,11 +9022,11 @@ paths:
                         schema:
                             type: object
                             properties:
-                                id:
+                                savedSearchId:
                                     type: string
                                     description: The unique identifier of the saved search
                             required:
-                                - id
+                                - savedSearchId
             responses:
                 '200':
                     description: Success
@@ -8983,9 +9123,9 @@ paths:
 
     /getSearchSavedById:
         get:
-            summary: Execute a saved search by ID
+            summary: Execute a saved search by SAVED_SEARCH_ID
             operationId: getSearchSavedById
-            description: Retrieves and executes a previously saved search by its ID, returning the search results using the stored search criteria.
+            description: Retrieves and executes a previously saved search by its SAVED_SEARCH_ID, returning the search results using the stored search criteria.
             tags:
                 - Saved Search
             requestBody:
@@ -8995,11 +9135,11 @@ paths:
                         schema:
                             type: object
                             properties:
-                                id:
+                                savedSearchId:
                                     type: string
                                     description: The unique identifier of the saved search to execute
                             required:
-                                - id
+                                - savedSearchId
             responses:
                 '200':
                     description: Success
@@ -9024,7 +9164,7 @@ paths:
                         schema:
                             type: object
                             properties:
-                                id:
+                                savedSearchId:
                                     type: string
                                     description: The unique identifier of the saved search to update
                                 name:
@@ -9043,7 +9183,7 @@ paths:
                                     type: integer
                                     description: The display order sequence number
                             required:
-                                - id
+                                - savedSearchId
                                 - name
                                 - featured
                                 - bookmarked
@@ -9063,7 +9203,7 @@ paths:
         put:
             summary: Update an existing saved search
             operationId: updateSavedSearch
-            description: Performs a full update of a saved search identified by ID. First retrieves the current saved search data, then merges provided values with existing values (falling back to current values for any parameters not supplied). This ensures all fields are populated in the update request.
+            description: Performs a full update of a saved search identified by SAVED_SEARCH_ID. First retrieves the current saved search data, then merges provided values with existing values (falling back to current values for any parameters not supplied). This ensures all fields are populated in the update request.
             tags:
                 - Saved Search
             requestBody:
@@ -9073,7 +9213,7 @@ paths:
                         schema:
                             type: object
                             properties:
-                                id:
+                                savedSearchId:
                                     type: string
                                     description: The unique identifier of the saved search to update
                                 name:
@@ -9091,7 +9231,7 @@ paths:
                                 sequence:
                                     type: integer
                                     description: The display order sequence number
-                                type:
+                                savedSearchType:
                                     type: integer
                                     description: The display type (0 = List, 1 = Preview Image, 2 = Header)
                                 query:
@@ -9131,13 +9271,13 @@ paths:
                                     type: string
                                     description: 'The logical binder for combining filters (e.g., "AND", "OR")'
                             required:
-                                - id
+                                - savedSearchId
                                 - name
                                 - featured
                                 - bookmarked
                                 - public
                                 - sequence
-                                - type
+                                - savedSearchType
                                 - query
                                 - offset
                                 - size
@@ -9271,7 +9411,10 @@ paths:
                                     type: string
                                     description: The ID of the asset being shared
                                 sharedUsers:
-                                    type: string
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: Array of Nomad user objects to share with
                             required:
                                 - id
                                 - name
@@ -9420,7 +9563,10 @@ paths:
                                     type: string
                                     description: The ID of the asset being shared
                                 sharedUsers:
-                                    type: string
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: Array of Nomad user objects to share with
                             required:
                                 - shareId
                                 - id
@@ -9467,7 +9613,8 @@ paths:
                                     type: string
                                     description: 'The tracking event type (e.g., "play", "pause", "complete")'
                                 seconds:
-                                    type: string
+                                    type: integer
+                                    description: The current playback position in seconds
                                 liveChannelId:
                                     type: string
                                     description: The live channel ID if tracking a live stream
@@ -9491,6 +9638,146 @@ paths:
                     description: Bad Request
                 '401':
                     description: The caller is not authenticated
+
+
+    # ── Misc Functions ──
+    /uploadAsset:
+        post:
+            summary: Upload a file as a new or replacement asset
+            operationId: uploadAsset
+            description: Starts a multipart upload, sends the file in 8 MB parts (larger for files over about 12 GB, which the server splits into at most 1,500 parts) directly to storage `maxWorkers` parts at a time, then requests completion. Parts are read from the file one at a time, so the whole file is never held in memory. Failed parts are retried with backoff. If anything fails before completion is requested, the upload is cancelled and the error is thrown.
+            tags:
+                - Misc Functions
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                name:
+                                    type: string
+                                    nullable: true
+                                    description: The name of the asset.
+                                existingAssetId:
+                                    type: string
+                                    nullable: true
+                                    description: The Existing AssetId (file) that should be overwritten with this upload. Note that by specifying this attribute then the parentId, relativePath and displayName are all ignored.
+                                relatedContentId:
+                                    type: string
+                                    nullable: true
+                                    description: The Content ID of the related content record to associate this asset to. Note that by specifying this attribute then the parentId and relativePath attributes are both ignored.
+                                uploadOverwriteOption:
+                                    type: string
+                                    description: The overwrite option for the upload. The option you want to use when uploading the asset. The options are continue, replace, and cancel. Continue continues the upload from where it left off. Replace replaces an existing asset. Replace is the one you want to use if you are starting a new upload. Cancel cancels an uploading asset.
+                                file:
+                                    type: string
+                                    format: binary
+                                    description: A browser File/Blob, the full or relative path of the file to upload (Node.js), or an object carrying the bytes in `buffer` plus `size` and `name`/`originalName`. This is ignored if the ExistingAssetId or if the RelatedContentId has a value.
+                                parentId:
+                                    type: string
+                                    nullable: true
+                                    description: The Parent AssetId (folder) to add the upload to. Note that if there is a full relativePath, then it is appended to this parent path. If this value is omitted then the file will be added to the predefined incoming folder. This is ignored if the ExistingAssetId or if the RelatedContentId has a value.
+                                languageId:
+                                    type: string
+                                    nullable: true
+                                    description: The language of the asset to upload. If this is left blank then the default system language is used.
+                                uploadReplaceOptions:
+                                    type: array
+                                    nullable: true
+                                    items:
+                                        type: string
+                                    description: Gets or sets if the asset already exists on the server, this decides how to handle the situation with related assets.
+                                options:
+                                    type: object
+                                    nullable: true
+                                    description: Upload tuning options.
+                                    properties:
+                                        maxWorkers:
+                                            type: integer
+                                            description: The number of parts uploaded concurrently.
+                                        partConfirmation:
+                                            type: string
+                                            description: 'When parts are confirmed with the server: `"per_part"` confirms each part as soon as it is uploaded, so the transfer list shows live progress; `"at_end"` skips the per-part calls and sends every part''s ETag on the final complete call instead, which is faster for large files. `"at_end"` requires an API version that accepts a part list on `POST /asset/upload/{id}/complete` (2026.9.1 or later).'
+                                        onProgress:
+                                            type: object
+                                            format: function
+                                            description: Called after each part with `(bytesUploaded, totalBytes)`.
+                                        reportProgress:
+                                            type: boolean
+                                            description: 'Whether to send progress to the server (at most every 5 seconds) so the transfer list shows it. With `"per_part"` the server already tracks progress from the part confirmations; with `"at_end"` this is the only progress it sees. Leave it off, with `"at_end"`, for the fewest API calls and the fastest upload.'
+                            required:
+                                - uploadOverwriteOption
+                                - file
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
+
+    /uploadRelatedAsset:
+        post:
+            summary: Upload a file as a related asset of an existing asset
+            operationId: uploadRelatedAsset
+            description: Uploads a file that will be associated as a related asset (e.g., subtitle track, alternate language version) to an existing asset, using the same multipart upload as `uploadAsset`. If anything fails before completion is requested, the upload is cancelled and the error is thrown.
+            tags:
+                - Misc Functions
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            type: object
+                            properties:
+                                existingAssetId:
+                                    type: string
+                                    description: Gets or sets the Existing AssetId (file) that should be overwritten with this upload. Note that by specifying this attribute then the parentId, relativePath and displayName are all ignored.
+                                relatedAssetId:
+                                    type: string
+                                    nullable: true
+                                    description: 'Gets or sets the related asset ID of the existingAsset that we''re replacing. If this is used, most of the other properties are not needed.'
+                                newRelatedAssetMetadataType:
+                                    type: string
+                                    nullable: true
+                                    description: Gets or sets the type of the related asset metadata to be created for a given ExistingAssetId. If specified, ExistingAssetId has to have a value defined.
+                                uploadOverwriteOption:
+                                    type: string
+                                    description: The overwrite option for the upload. The option you want to use when uploading the asset. The options are continue, replace, and cancel. Continue continues the upload from where it left off. Replace replaces an existing asset. Replace is the one you want to use if you are starting a new upload.
+                                file:
+                                    type: string
+                                    format: binary
+                                    description: A browser File/Blob, the full or relative path of the file to upload (Node.js), or an object carrying the bytes in `buffer` plus `size` and `name`/`originalName`.
+                                languageId:
+                                    type: string
+                                    nullable: true
+                                    description: The language of the asset to upload. If this is left blank then the default system language is used.
+                                options:
+                                    type: object
+                                    nullable: true
+                                    description: Upload tuning options; see `uploadAsset`.
+                                    properties:
+                                        maxWorkers:
+                                            type: integer
+                                            description: The number of parts uploaded concurrently.
+                                        partConfirmation:
+                                            type: string
+                                            description: '`"per_part"` or `"at_end"`.'
+                                        onProgress:
+                                            type: object
+                                            format: function
+                                            description: Called after each part with `(bytesUploaded, totalBytes)`.
+                                        reportProgress:
+                                            type: boolean
+                                            description: Whether to send progress to the server; see `uploadAsset`.
+                            required:
+                                - existingAssetId
+                                - uploadOverwriteOption
+                                - file
+            responses:
+                '200':
+                    description: Success
+                '400':
+                    description: Bad Request
 
 
 components:
@@ -9794,6 +10081,15 @@ components:
                 displayObjectKey:
                     type: string
                     description: The destination object key as shown to a user. Upload only
+                assetName:
+                    type: string
+                    description: The display name of the asset. Download only
+                assetUrl:
+                    type: string
+                    description: 'The internal URL of the asset in `{bucketName}::{objectKey}` format. Download only'
+                fullPreviewUrl:
+                    type: string
+                    description: 'A signed URL of the asset''s thumbnail image, when one is available'
             required:
                 - id
                 - direction
@@ -9802,6 +10098,31 @@ components:
                 - bytesTotal
                 - attemptCount
                 - createdDate
+        UploadQueueItem:
+            type: object
+            properties:
+                fileName:
+                    type: string
+                    description: The file name, including its extension
+                fileSize:
+                    type: integer
+                    description: The file size in bytes
+                mimeType:
+                    type: string
+                    description: The MIME type, when known; otherwise inferred from the file name
+                destinationFolderId:
+                    type: string
+                    description: The destination folder (UUID); omit for the configured default upload folder
+                chunkSize:
+                    type: integer
+                    description: The multipart part size in bytes, e.g. 8388608
+                uploadOverwriteOption:
+                    type: string
+                    description: 'How to treat an existing file: "continue", "replace" (default) or "cancel"'
+            required:
+                - fileName
+                - fileSize
+                - chunkSize
         TransferList:
             type: object
             properties:
@@ -9812,7 +10133,7 @@ components:
                     description: The page of transfers
                 totalItemCount:
                     type: integer
-                    description: Always -1; a client only needs to know whether more exist
+                    description: The number of transfers matching the filters; approximate for very large histories
                 nextPageOffset:
                     type: string
                     description: The opaque cursor to pass back as `cursor` for the next page. A null value means the end has been reached
