@@ -125,6 +125,9 @@ paths:
                                 password:
                                     type: string
                                     description: The password for the new account
+                                properties:
+                                    type: object
+                                    description: Optional custom properties to store on the new account
                             required:
                                 - email
                                 - firstName
@@ -271,13 +274,6 @@ paths:
                                     description: Audio track configuration for the output
                             required:
                                 - sources
-                                - title
-                                - tags
-                                - collections
-                                - relatedContents
-                                - destinationFolderId
-                                - videoBitrate
-                                - audioTracks
             responses:
                 '200':
                     description: Success
@@ -345,14 +341,6 @@ paths:
                                 - assetId
                                 - startTimeCode
                                 - endTimeCode
-                                - title
-                                - outputFolderId
-                                - tags
-                                - collections
-                                - relatedContents
-                                - videoBitrate
-                                - audioTracks
-                                - useHlsSegmentBasedClipping
             responses:
                 '200':
                     description: Success
@@ -400,10 +388,6 @@ paths:
                             required:
                                 - assetIds
                                 - destinationFolderId
-                                - batchAction
-                                - contentDefinitionId
-                                - schemaName
-                                - resolverExempt
             responses:
                 '200':
                     description: Success
@@ -446,13 +430,16 @@ paths:
                                 description:
                                     type: string
                                     description: Detailed description of the annotation
+                                contentId:
+                                    type: string
+                                    description: ID of the content record to link the annotation to
+                                imageUrl:
+                                    type: string
+                                    description: URL of an image to attach to the annotation
                             required:
                                 - assetId
                                 - startTimeCode
                                 - endTimeCode
-                                - title
-                                - summary
-                                - description
             responses:
                 '200':
                     description: Success
@@ -496,8 +483,6 @@ paths:
                             required:
                                 - assetId
                                 - timeCode
-                                - tags
-                                - labels
             responses:
                 '200':
                     description: Success
@@ -729,8 +714,6 @@ paths:
                                     description: Download proxy URL (Admin API only)
                             required:
                                 - assetIds
-                                - fileName
-                                - downloadProxy
             responses:
                 '200':
                     description: Success
@@ -889,11 +872,6 @@ paths:
                                     description: The number of items per page
                             required:
                                 - assetId
-                                - folderId
-                                - sortColumn
-                                - isDesc
-                                - pageIndex
-                                - pageSize
             responses:
                 '200':
                     description: Success
@@ -1017,7 +995,6 @@ paths:
                                     description: The maximum number of parent folders to return
                             required:
                                 - assetId
-                                - pageSize
             responses:
                 '200':
                     description: Success
@@ -1144,8 +1121,6 @@ paths:
                                 includeCompletedUploads:
                                     type: boolean
                                     description: Whether to include completed uploads in the results
-                            required:
-                                - includeCompletedUploads
             responses:
                 '200':
                     description: Success
@@ -1240,9 +1215,13 @@ paths:
                                     items:
                                         type: string
                                     description: The restore profile name(s) to use; a single name is sent as a one-item `restoreProfileNames` list
+                                sourceAssetIds:
+                                    type: array
+                                    items:
+                                        type: string
+                                    description: Source asset ID(s) to restore from; a single ID is sent as a one-item `sourceAssetIds` list
                             required:
                                 - assetId
-                                - profile
             responses:
                 '200':
                     description: Success
@@ -1291,11 +1270,6 @@ paths:
                             required:
                                 - assetId
                                 - destinationFolderId
-                                - name
-                                - batchAction
-                                - contentDefinitionId
-                                - schemaName
-                                - resolverExempt
             responses:
                 '200':
                     description: Success
@@ -1341,10 +1315,6 @@ paths:
                             required:
                                 - assetId
                                 - trackingEvent
-                                - liveChannelId
-                                - contentId
-                                - second
-                                - profileId
             responses:
                 '200':
                     description: Success
@@ -1432,26 +1402,10 @@ paths:
                                     type: object
                                     description: Custom attribute key-value pairs to store on the asset
                             required:
-                                - assetId
-                                - parentId
-                                - displayObjectKey
                                 - bucketName
                                 - objectKey
-                                - eTag
-                                - tagIds
-                                - collectionIds
-                                - relatedContentIds
-                                - sequencer
-                                - assetStatus
-                                - storageClass
-                                - assetType
-                                - contentLength
-                                - storageEventName
-                                - createdDate
-                                - storageSourceIpAddress
                                 - startMediaProcessor
                                 - deleteMissingAsset
-                                - customAttributes
             responses:
                 '200':
                     description: Success
@@ -1550,9 +1504,6 @@ paths:
                                     description: Duration in hours before the share link expires
                             required:
                                 - assetId
-                                - nomadUsers
-                                - externalUsers
-                                - sharedDurationInHours
             responses:
                 '200':
                     description: Success
@@ -1677,13 +1628,6 @@ paths:
                             required:
                                 - assetId
                                 - annotationId
-                                - startTimeCode
-                                - endTimeCode
-                                - title
-                                - summary
-                                - description
-                                - contentId
-                                - imageUrl
             responses:
                 '200':
                     description: Success
@@ -1734,13 +1678,6 @@ paths:
                                     description: Whether to apply AVAILABLE_END_DATE. Defaults to true when an end date is provided
                             required:
                                 - assetId
-                                - displayName
-                                - displayDate
-                                - availableStartDate
-                                - availableEndDate
-                                - customProperties
-                                - availableStartDateSpecified
-                                - availableEndDateSpecified
             responses:
                 '200':
                     description: Success
@@ -1787,9 +1724,6 @@ paths:
                             required:
                                 - assetId
                                 - adBreakId
-                                - timeCode
-                                - tags
-                                - labels
             responses:
                 '200':
                     description: Success
@@ -1869,9 +1803,6 @@ paths:
                             required:
                                 - assetId
                                 - inheritSecurity
-                                - securityGroups
-                                - securityUsers
-                                - clearPublicExpirationDate
             responses:
                 '200':
                     description: Success
@@ -1902,9 +1833,46 @@ paths:
                                 background:
                                     type: boolean
                                     description: Whether to run the auto-clip as a background job
+                                clipOptions:
+                                    type: object
+                                    nullable: true
+                                    description: Optional clip settings sent as the request body. Only the keys you provide are sent
+                                    properties:
+                                        title:
+                                            type: string
+                                            description: Title of the created clip asset
+                                        outputFolderId:
+                                            type: string
+                                            description: Folder asset ID the clip is created in
+                                        tags:
+                                            type: array
+                                            items:
+                                                type: object
+                                            description: Tags to apply to the clip
+                                        collections:
+                                            type: array
+                                            items:
+                                                type: object
+                                            description: Collections to add the clip to
+                                        relatedContent:
+                                            type: array
+                                            items:
+                                                type: object
+                                            description: Related content to link to the clip
+                                        internalMasterManifestUrl:
+                                            type: string
+                                            description: Master manifest URL to clip from
+                                        similarityThresholdOverride:
+                                            type: integer
+                                            description: Overrides the frame-similarity threshold used to detect the loop boundaries
+                                        fullScan:
+                                            type: boolean
+                                            description: Scan every chunk instead of using the adaptive search
+                                        submitClipJob:
+                                            type: boolean
+                                            description: Whether to submit the clip job after detection
                             required:
                                 - assetId
-                                - background
             responses:
                 '200':
                     description: Success
@@ -1941,7 +1909,6 @@ paths:
                                     description: Whether to download the proxy (lower-resolution) version
                             required:
                                 - ids
-                                - downloadProxy
             responses:
                 '200':
                     description: Success
@@ -2028,14 +1995,6 @@ paths:
                                 sortDescending:
                                     type: boolean
                                     description: Whether to sort `SORT_BY` descending. Defaults to ascending
-                            required:
-                                - direction
-                                - statuses
-                                - pageSize
-                                - cursor
-                                - oldestFirst
-                                - sortBy
-                                - sortDescending
             responses:
                 '200':
                     description: Success
@@ -2117,8 +2076,6 @@ paths:
                                 direction:
                                     type: string
                                     description: 'Which side to clear: "Upload", "Download", or "All". Defaults to both'
-                            required:
-                                - direction
             responses:
                 '200':
                     description: Success
@@ -2202,11 +2159,6 @@ paths:
                             required:
                                 - direction
                                 - transferId
-                                - transferStatus
-                                - completePercentage
-                                - bytesTransferred
-                                - errorMessage
-                                - bytesTotal
             responses:
                 '200':
                     description: Success
@@ -2331,11 +2283,6 @@ paths:
                                     description: End date for content availability in ISO 8601 format
                             required:
                                 - contentId
-                                - name
-                                - date
-                                - customProperties
-                                - availableStartDate
-                                - availableEndDate
             responses:
                 '200':
                     description: Success
@@ -2469,10 +2416,6 @@ paths:
                                     description: The schema name for the metadata update
                             required:
                                 - contentIds
-                                - collectionIds
-                                - relatedContentIds
-                                - tagIds
-                                - schemaName
             responses:
                 '200':
                     description: Success
@@ -2675,7 +2618,6 @@ paths:
                                     type: string
                                     description: The user session ID to validate
                             required:
-                                - applicationId
                                 - userSessionId
             responses:
                 '200':
@@ -2706,7 +2648,6 @@ paths:
                                     type: string
                                     description: The user session ID to include in the ping
                             required:
-                                - applicationId
                                 - userSessionId
             responses:
                 '200':
@@ -2790,23 +2731,6 @@ paths:
                                     items:
                                         type: object
                                     description: Specific text fields to search within
-                            required:
-                                - query
-                                - offset
-                                - size
-                                - filters
-                                - sortFields
-                                - searchResultFields
-                                - similarAssetId
-                                - minScore
-                                - excludeTotalRecordCount
-                                - filterBinder
-                                - fullUrlFieldNames
-                                - distinctOnFieldName
-                                - includeVideoClips
-                                - useLlmSearch
-                                - includeInternalFieldsInResults
-                                - searchTextFields
             responses:
                 '200':
                     description: Success
@@ -2832,8 +2756,6 @@ paths:
                                 maxRecordsPerContentDef:
                                     type: integer
                                     description: The maximum number of records to scan per content definition
-                            required:
-                                - maxRecordsPerContentDef
             responses:
                 '200':
                     description: Success
@@ -2861,8 +2783,6 @@ paths:
                                 lookBackDays:
                                     type: integer
                                     description: How many days back to scan for stale uploads
-                            required:
-                                - lookBackDays
             responses:
                 '200':
                     description: Success
@@ -2936,8 +2856,6 @@ paths:
                                 configType:
                                     type: string
                                     description: Optional configuration type to filter by
-                            required:
-                                - configType
             responses:
                 '200':
                     description: Success
@@ -2988,8 +2906,6 @@ paths:
                                     description: Property values to save to the new record
                             required:
                                 - contentDefinitionId
-                                - languageId
-                                - properties
             responses:
                 '200':
                     description: Success
@@ -3100,7 +3016,6 @@ paths:
                             required:
                                 - contentId
                                 - contentDefinitionId
-                                - isRevision
             responses:
                 '200':
                     description: Success
@@ -3146,10 +3061,6 @@ paths:
                             required:
                                 - contentId
                                 - contentDefinitionId
-                                - sortColumn
-                                - isDesc
-                                - pageIndex
-                                - pageSize
             responses:
                 '200':
                     description: Success
@@ -3219,7 +3130,6 @@ paths:
                                 - contentId
                                 - contentDefinitionId
                                 - properties
-                                - languageId
             responses:
                 '200':
                     description: Success
@@ -3305,12 +3215,6 @@ paths:
                                 pageSize:
                                     type: integer
                                     description: The number of results per page
-                            required:
-                                - contentManagementType
-                                - sortColumn
-                                - isDesc
-                                - pageIndex
-                                - pageSize
             responses:
                 '200':
                     description: Success
@@ -3470,16 +3374,13 @@ paths:
                                     type: object
                                     description: Additional series-specific properties
                             required:
-                                - contentId
                                 - contentDefinitionId
                                 - name
                                 - startDatetime
                                 - endDatetime
                                 - eventType
-                                - series
                                 - isDisabled
                                 - overrideSeriesProperties
-                                - seriesProperties
             responses:
                 '200':
                     description: Success
@@ -3587,21 +3488,6 @@ paths:
                                     description: The output profile group to use
                             required:
                                 - eventId
-                                - slateVideo
-                                - prerollVideo
-                                - postrollVideo
-                                - isSecureOutput
-                                - archiveFolder
-                                - primaryLiveInput
-                                - backupLiveInput
-                                - primaryLivestreamInputUrl
-                                - backupLivestreamInputUrl
-                                - externalOutputProfiles
-                                - status
-                                - statusMessage
-                                - liveChannel
-                                - overrideSettings
-                                - outputProfileGroup
             responses:
                 '200':
                     description: Success
@@ -3640,7 +3526,6 @@ paths:
                                 - eventId
                                 - recurringDays
                                 - recurringWeeks
-                                - endDate
             responses:
                 '200':
                     description: Success
@@ -3780,15 +3665,6 @@ paths:
                                     items:
                                         type: object
                                     description: Array of transcode profile objects to apply
-                            required:
-                                - bucketName
-                                - objectKey
-                                - notificationCallbackUrl
-                                - externalId
-                                - replaceExistingJob
-                                - assetUrl
-                                - requestedTasks
-                                - requestedTranscodeProfiles
             responses:
                 '200':
                     description: Success
@@ -3822,8 +3698,6 @@ paths:
                                     description: External system identifier for the job
                             required:
                                 - assetId
-                                - jobResultsUrl
-                                - externalId
             responses:
                 '200':
                     description: Success
@@ -3893,16 +3767,7 @@ paths:
                                     description: Request HLS segment-based clipping (faster, may be less frame-accurate)
                             required:
                                 - liveChannelId
-                                - startTimeCode
-                                - endTimeCode
-                                - title
                                 - outputFolderId
-                                - tags
-                                - collections
-                                - relatedContents
-                                - videoBitrate
-                                - audioTracks
-                                - useHlsSegmentBasedClipping
             responses:
                 '200':
                     description: Success
@@ -3966,16 +3831,9 @@ paths:
                                     description: 'Security group names (e.g., "Content Manager", "Everyone", "Guest")'
                             required:
                                 - name
-                                - thumbnailImageId
-                                - archiveFolderAssetId
-                                - enableHighAvailability
-                                - enableLiveClipping
                                 - isSecureOutput
                                 - isOutputScreenshots
                                 - channelType
-                                - externalServiceApiUrl
-                                - externalOutputProfiles
-                                - securityGroups
             responses:
                 '200':
                     description: Success
@@ -4143,7 +4001,6 @@ paths:
                                 - folderAssetId
                                 - recordingStartDateTime
                                 - recordingDurationSeconds
-                                - runInBackground
             responses:
                 '200':
                     description: Success
@@ -4174,7 +4031,6 @@ paths:
                                     description: Whether to wait for the channel to reach Running status
                             required:
                                 - liveChannelId
-                                - waitForStart
             responses:
                 '200':
                     description: Success
@@ -4236,7 +4092,6 @@ paths:
                                     description: Whether to wait for the channel to reach Idle status
                             required:
                                 - liveChannelId
-                                - waitForStop
             responses:
                 '200':
                     description: Success
@@ -4303,17 +4158,6 @@ paths:
                                     description: Security group names to assign
                             required:
                                 - liveChannelId
-                                - name
-                                - thumbnailImageId
-                                - archiveFolderAssetId
-                                - enableHighAvailability
-                                - enableLiveClipping
-                                - isSecureOutput
-                                - isOutputScreenshots
-                                - channelType
-                                - externalServiceApiUrl
-                                - externalOutputProfiles
-                                - securityGroups
             responses:
                 '200':
                     description: Success
@@ -4396,12 +4240,7 @@ paths:
                                     description: Full source configurations (overrides SOURCE parameter)
                             required:
                                 - name
-                                - source
                                 - inputType
-                                - isStandard
-                                - videoAssetId
-                                - destinations
-                                - sources
             responses:
                 '200':
                     description: Success
@@ -4527,13 +4366,6 @@ paths:
                                     description: Full source configurations (overrides SOURCE)
                             required:
                                 - liveInputId
-                                - name
-                                - source
-                                - inputType
-                                - isStandard
-                                - videoAssetId
-                                - destinations
-                                - sources
             responses:
                 '200':
                     description: Success
@@ -4633,8 +4465,6 @@ paths:
                                     description: Array of tag IDs to apply to the segment
                             required:
                                 - liveOperatorId
-                                - relatedContentIds
-                                - tagIds
             responses:
                 '200':
                     description: Success
@@ -4756,11 +4586,6 @@ paths:
                                     description: Array of tag IDs to apply to the broadcast
                             required:
                                 - liveOperatorId
-                                - prerollAssetId
-                                - postrollAssetId
-                                - liveInputId
-                                - relatedContentIds
-                                - tagIds
             responses:
                 '200':
                     description: Success
@@ -4891,17 +4716,6 @@ paths:
                                 - name
                                 - outputType
                                 - enabled
-                                - audioBitrate
-                                - outputStreamKey
-                                - outputUrl
-                                - secondaryOutputStreamKey
-                                - secondaryOutputUrl
-                                - videoBitrate
-                                - videoBitrateMode
-                                - videoCodec
-                                - videoFramesPerSecond
-                                - videoHeight
-                                - videoWidth
             responses:
                 '200':
                     description: Success
@@ -5059,20 +4873,6 @@ paths:
                                     description: The video width in pixels
                             required:
                                 - liveOutputId
-                                - name
-                                - outputType
-                                - enabled
-                                - audioBitrate
-                                - outputStreamKey
-                                - outputUrl
-                                - secondaryOutputStreamKey
-                                - secondaryOutputUrl
-                                - videoBitrate
-                                - videoBitrateMode
-                                - videoCodec
-                                - videoFramesPerSecond
-                                - videoHeight
-                                - videoWidth
             responses:
                 '200':
                     description: Success
@@ -5128,8 +4928,6 @@ paths:
                                 - manifestType
                                 - isDefaultGroup
                                 - liveOutputType
-                                - archiveLiveOutputProfile
-                                - liveOutputProfiles
             responses:
                 '200':
                     description: Success
@@ -5253,13 +5051,6 @@ paths:
                                     description: The new array of output profiles
                             required:
                                 - liveOutputProfileGroupId
-                                - name
-                                - isEnabled
-                                - manifestType
-                                - isDefaultGroup
-                                - liveOutputType
-                                - archiveLiveOutputProfile
-                                - liveOutputProfiles
             responses:
                 '200':
                     description: Success
@@ -5330,7 +5121,6 @@ paths:
                                 - searchDurationInMinutes
                                 - searchFilterType
                                 - tags
-                                - thumbnailAsset
             responses:
                 '200':
                     description: Success
@@ -5367,10 +5157,18 @@ paths:
                                 timeZoneId:
                                     type: string
                                     description: The time zone identifier for the schedule
+                                routeName:
+                                    type: string
+                                    description: The route name (URL slug) for the schedule
+                                loopPlaylist:
+                                    type: boolean
+                                    description: Whether the schedule loops when it reaches the end
+                                properties:
+                                    type: object
+                                    description: Custom properties map
                             required:
                                 - defaultVideoAsset
                                 - name
-                                - thumbnailAsset
                                 - timeZoneId
             responses:
                 '200':
@@ -5406,11 +5204,17 @@ paths:
                                 defaultVideoAsset:
                                     type: object
                                     description: The default video asset to play when no items are available
+                                routeName:
+                                    type: string
+                                    description: The route name (URL slug) for the playlist
+                                timeZoneId:
+                                    type: string
+                                    description: The time zone identifier for the playlist
+                                properties:
+                                    type: object
+                                    description: Custom properties map
                             required:
                                 - name
-                                - thumbnailAsset
-                                - loopPlaylist
-                                - defaultVideoAsset
             responses:
                 '200':
                     description: Success
@@ -5445,7 +5249,6 @@ paths:
                             required:
                                 - playlistId
                                 - videoAsset
-                                - previousItem
             responses:
                 '200':
                     description: Success
@@ -5497,7 +5300,6 @@ paths:
                                 - days
                                 - durationTimeCode
                                 - endTimeCode
-                                - previousItem
                                 - timeCode
             responses:
                 '200':
@@ -5548,7 +5350,6 @@ paths:
                                 - durationTimeCode
                                 - endTimeCode
                                 - liveChannel
-                                - previousItem
                                 - timeCode
             responses:
                 '200':
@@ -5599,7 +5400,6 @@ paths:
                                 - durationTimeCode
                                 - endTimeCode
                                 - playlistSchedule
-                                - previousItem
                                 - timeCode
             responses:
                 '200':
@@ -5673,18 +5473,9 @@ paths:
                                     description: The start time for the schedule item (timecode format)
                             required:
                                 - scheduleId
-                                - collections
                                 - days
                                 - durationTimeCode
-                                - endSearchDate
-                                - endSearchDurationInMinutes
                                 - endTimeCode
-                                - previousItem
-                                - relatedContents
-                                - searchDate
-                                - searchDurationInMinutes
-                                - searchFilterType
-                                - tags
                                 - timeCode
             responses:
                 '200':
@@ -6018,7 +5809,6 @@ paths:
                             required:
                                 - scheduleId
                                 - itemId
-                                - previousItem
             responses:
                 '200':
                     description: Success
@@ -6049,6 +5839,9 @@ paths:
                                 numberOfLockedDays:
                                     type: integer
                                     description: The number of days to lock the published schedule content
+                                background:
+                                    type: boolean
+                                    description: Whether the server publishes in the background and returns immediately
                             required:
                                 - scheduleId
                                 - numberOfLockedDays
@@ -6087,8 +5880,6 @@ paths:
                                     description: Whether the server starts the schedule in the background and returns immediately. The API defaults to true
                             required:
                                 - scheduleId
-                                - skipCleanupOnFailure
-                                - background
             responses:
                 '200':
                     description: Success
@@ -6124,8 +5915,6 @@ paths:
                                     description: Whether the server stops the schedule in the background and returns immediately. The API defaults to true
                             required:
                                 - scheduleId
-                                - forceStop
-                                - background
             responses:
                 '200':
                     description: Success
@@ -6198,7 +5987,6 @@ paths:
                                 - searchDurationInMinutes
                                 - searchFilterType
                                 - tags
-                                - thumbnailAsset
             responses:
                 '200':
                     description: Success
@@ -6240,10 +6028,6 @@ paths:
                                     description: The time zone identifier; pass null to keep current
                             required:
                                 - scheduleId
-                                - defaultVideoAsset
-                                - name
-                                - thumbnailAsset
-                                - timeZoneId
             responses:
                 '200':
                     description: Success
@@ -6283,12 +6067,17 @@ paths:
                                 thumbnailAsset:
                                     type: object
                                     description: The thumbnail asset; pass null to keep current
+                                routeName:
+                                    type: string
+                                    description: The route name (URL slug); omit to keep current
+                                timeZoneId:
+                                    type: string
+                                    description: The time zone identifier; omit to keep current
+                                properties:
+                                    type: object
+                                    description: Custom properties map; omit to keep current
                             required:
                                 - scheduleId
-                                - defaultVideoAsset
-                                - loopPlaylist
-                                - name
-                                - thumbnailAsset
             responses:
                 '200':
                     description: Success
@@ -6374,11 +6163,6 @@ paths:
                             required:
                                 - scheduleId
                                 - itemId
-                                - asset
-                                - days
-                                - durationTimeCode
-                                - endTimeCode
-                                - timeCode
             responses:
                 '200':
                     description: Success
@@ -6427,11 +6211,6 @@ paths:
                             required:
                                 - scheduleId
                                 - itemId
-                                - days
-                                - durationTimeCode
-                                - endTimeCode
-                                - liveChannel
-                                - timeCode
             responses:
                 '200':
                     description: Success
@@ -6480,11 +6259,6 @@ paths:
                             required:
                                 - scheduleId
                                 - itemId
-                                - days
-                                - durationTimeCode
-                                - endTimeCode
-                                - playlistSchedule
-                                - timeCode
             responses:
                 '200':
                     description: Success
@@ -6563,19 +6337,6 @@ paths:
                             required:
                                 - scheduleId
                                 - itemId
-                                - collections
-                                - days
-                                - durationTimeCode
-                                - endSearchDate
-                                - endSearchDurationInMinutes
-                                - endTimeCode
-                                - previousItem
-                                - relatedContents
-                                - searchDate
-                                - searchDurationInMinutes
-                                - searchFilterType
-                                - tags
-                                - timeCode
             responses:
                 '200':
                     description: Success
@@ -6622,7 +6383,6 @@ paths:
                                 - asset
                                 - isLoop
                                 - durationTimeCode
-                                - previousId
             responses:
                 '200':
                     description: Success
@@ -6665,9 +6425,6 @@ paths:
                             required:
                                 - liveChannelId
                                 - liveInput
-                                - backupLiveInput
-                                - fixedOnAirTimeUtc
-                                - previousId
             responses:
                 '200':
                     description: Success
@@ -6879,9 +6636,6 @@ paths:
                             required:
                                 - eventId
                                 - channelId
-                                - asset
-                                - isLoop
-                                - durationTimeCode
             responses:
                 '200':
                     description: Success
@@ -6924,9 +6678,6 @@ paths:
                             required:
                                 - eventId
                                 - channelId
-                                - liveInput
-                                - backupInput
-                                - fixedOnAirTimeUtc
             responses:
                 '200':
                     description: Success
@@ -7953,6 +7704,9 @@ paths:
                                 password:
                                     type: string
                                     description: The password for the guest account
+                                properties:
+                                    type: object
+                                    description: Optional custom properties to store on the guest account
                             required:
                                 - email
                                 - firstName
@@ -8033,7 +7787,6 @@ paths:
                                     description: The asset ID to remove from continue watching
                             required:
                                 - userId
-                                - assetId
             responses:
                 '200':
                     description: Success
@@ -8210,9 +7963,11 @@ paths:
                                     items:
                                         type: string
                                     description: Optional array of content IDs to filter results
+                                languageId:
+                                    type: string
+                                    description: Optional language ID to localize the response
                             required:
                                 - mediaGroupId
-                                - filterIds
             responses:
                 '200':
                     description: Success
@@ -8284,6 +8039,11 @@ paths:
                                 groupId:
                                     type: string
                                     description: The unique identifier of the personal group
+                                filterIds:
+                                    type: array
+                                    items:
+                                        type: string
+                                    description: Optional array of content IDs to filter results
                             required:
                                 - groupId
             responses:
@@ -8360,10 +8120,6 @@ paths:
                                     description: The number of results per page (defaults to 100)
                             required:
                                 - query
-                                - ids
-                                - sortFields
-                                - offset
-                                - size
             responses:
                 '200':
                     description: Success
@@ -8961,16 +8717,6 @@ paths:
                                 - public
                                 - sequence
                                 - savedSearchType
-                                - query
-                                - offset
-                                - size
-                                - filters
-                                - sortFields
-                                - searchResultFields
-                                - similarAssetId
-                                - minScore
-                                - excludeTotalRecordCount
-                                - filterBinder
             responses:
                 '200':
                     description: Success
@@ -9184,11 +8930,6 @@ paths:
                                     description: The display order sequence number
                             required:
                                 - savedSearchId
-                                - name
-                                - featured
-                                - bookmarked
-                                - public
-                                - sequence
             responses:
                 '200':
                     description: Success
@@ -9272,22 +9013,6 @@ paths:
                                     description: 'The logical binder for combining filters (e.g., "AND", "OR")'
                             required:
                                 - savedSearchId
-                                - name
-                                - featured
-                                - bookmarked
-                                - public
-                                - sequence
-                                - savedSearchType
-                                - query
-                                - offset
-                                - size
-                                - filters
-                                - sortFields
-                                - searchResultFields
-                                - similarAssetId
-                                - minScore
-                                - excludeTotalRecordCount
-                                - filterBinder
             responses:
                 '200':
                     description: Success
@@ -9569,19 +9294,6 @@ paths:
                                     description: Array of Nomad user objects to share with
                             required:
                                 - shareId
-                                - id
-                                - name
-                                - sharedContents
-                                - sharedDuration
-                                - sharedPermissions
-                                - sharedType
-                                - sharedStatus
-                                - sharedDurationInHours
-                                - sharedLink
-                                - ownerId
-                                - expirationDate
-                                - assetId
-                                - sharedUsers
             responses:
                 '200':
                     description: Success
@@ -9628,9 +9340,6 @@ paths:
                                 - assetId
                                 - trackingEvent
                                 - seconds
-                                - liveChannelId
-                                - contentId
-                                - profileId
             responses:
                 '200':
                     description: Success
