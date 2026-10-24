@@ -2268,10 +2268,10 @@ paths:
                                     description: The unique identifier of the asset to update
                                 name:
                                     type: string
-                                    description: New name for the asset
+                                    description: New display name for the asset (sent as displayName)
                                 date:
                                     type: string
-                                    description: New date value for the asset
+                                    description: New display date for the asset in ISO 8601 format (sent as displayDate)
                                 customProperties:
                                     type: object
                                     description: Key-value pairs of custom metadata properties
@@ -2381,7 +2381,7 @@ paths:
         post:
             summary: Perform bulk metadata updates across multiple content items
             operationId: bulkUpdateMetadata
-            description: 'Updates collections, tags, related content, and custom metadata for multiple content items in a single request. Merges new values with existing metadata from the first content item''s asset details.'
+            description: 'Updates collections, tags and related content for multiple content items in a single request. Merges new values with existing metadata from the first content item''s asset details.'
             tags:
                 - Content Metadata
             requestBody:
@@ -2413,14 +2413,14 @@ paths:
                                     description: Tag IDs to add
                                 schemaName:
                                     type: string
-                                    description: The schema name for the metadata update
+                                    description: Not sent. Kept for backward compatibility; the API currently only supports bulk updates of assets
                             required:
                                 - contentIds
             responses:
                 '200':
                     description: Success
                 '400':
-                    description: Bad Request
+                    description: Missing content IDs or property changes
                 '401':
                     description: The caller is not authenticated
 
@@ -3426,7 +3426,7 @@ paths:
         post:
             summary: Add a live schedule configuration to an event
             operationId: addLiveScheduleToEvent
-            description: Creates a live schedule associated with the specified event, configuring the live channel, inputs, output profiles, and video overlays (slate, preroll, postroll).
+            description: Creates a live schedule associated with the specified event, configuring the live channel, inputs, output profiles, and video overlays (slate, preroll, postroll). Arguments that are null or omitted are not sent, so the API applies its defaults for them.
             tags:
                 - Event
             requestBody:
@@ -3481,8 +3481,8 @@ paths:
                                     type: object
                                     description: The live channel to associate with
                                 overrideSettings:
-                                    type: object
-                                    description: Override settings for the schedule
+                                    type: boolean
+                                    description: 'Whether the live schedule overrides the live channel''s settings'
                                 outputProfileGroup:
                                     type: object
                                     description: The output profile group to use
@@ -3500,7 +3500,7 @@ paths:
         post:
             summary: Extend a live schedule with recurring copies
             operationId: extendLiveSchedule
-            description: Creates recurring copies of the live schedule associated with the specified event, based on the recurring day/week pattern and end date.
+            description: Creates recurring copies of the live schedule associated with the specified event, based on the recurring day/week pattern and end date. If no end date is given, it is the current date plus RECURRING_WEEKS weeks. The local time zone offset is sent with the request.
             tags:
                 - Event
             requestBody:
@@ -3515,7 +3515,7 @@ paths:
                                     description: The content ID of the event whose schedule to extend
                                 recurringDays:
                                     type: integer
-                                    description: Array of day numbers for recurrence
+                                    description: 'The days to recur on. Each item is a day name ("Monday"), a day number (0 = Sunday ... 6 = Saturday) or a day lookup object'
                                 recurringWeeks:
                                     type: integer
                                     description: Number of weeks for the recurrence pattern
@@ -3533,6 +3533,8 @@ paths:
                     description: Bad Request
                 '401':
                     description: The caller is not authenticated
+                '404':
+                    description: The event was not found
 
     /getLiveSchedule:
         get:
@@ -4326,7 +4328,7 @@ paths:
         put:
             summary: 'Update an existing live input''s configuration'
             operationId: updateLiveInput
-            description: Fetches the current live input state, merges the provided changes (only updating fields that differ), and submits the update. Adjusts source-specific fields based on the input type and waits for the input to return to Detached status.
+            description: 'Fetches the current live input state, merges the provided changes (only updating fields that differ), and submits the update. Adjusts source-specific fields based on the input type (the input''s current type when INPUT_TYPE is not given) and waits for the input to return to Detached status.'
             tags:
                 - Live Input
             requestBody:
@@ -5946,7 +5948,7 @@ paths:
                                     type: array
                                     items:
                                         type: object
-                                    description: The collections to filter content by; pass empty array to keep current
+                                    description: The collections to filter content by; pass null or an empty array to keep current
                                 endSearchDate:
                                     type: string
                                     description: The end date for the content search range; pass null to keep current
@@ -5957,8 +5959,10 @@ paths:
                                     type: string
                                     description: The display name for the playlist; pass null to keep current
                                 relatedContents:
-                                    type: object
-                                    description: The related content filter criteria; pass 0 to keep current
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: The related content to filter content by; pass null or an empty array to keep current
                                 searchDate:
                                     type: string
                                     description: The start date for the content search range; pass null to keep current
@@ -5972,7 +5976,7 @@ paths:
                                     type: array
                                     items:
                                         type: object
-                                    description: The tags to filter content by; pass empty array to keep current
+                                    description: The tags to filter content by; pass null or an empty array to keep current
                                 thumbnailAsset:
                                     type: object
                                     description: The thumbnail asset for the playlist; pass null to keep current
@@ -7663,7 +7667,7 @@ paths:
                                     description: Array of email addresses to invite
                                 contentSecurityAttribute:
                                     type: string
-                                    description: 'The content security attribute (e.g., "Undefined", "Guest", "Demo")'
+                                    description: 'The content security attribute (e.g., "Undefined", "Guest", "Demo"). Sent, but not applied: the API''s invite/remove request has no such field'
                             required:
                                 - contentId
                                 - contentDefinitionId
@@ -7748,7 +7752,7 @@ paths:
                                     description: Array of email addresses of users to remove
                                 contentSecurityAttribute:
                                     type: string
-                                    description: 'The content security attribute (e.g., "Undefined", "Guest", "Demo")'
+                                    description: 'The content security attribute (e.g., "Undefined", "Guest", "Demo"). Sent, but not applied: the API''s invite/remove request has no such field'
                             required:
                                 - contentId
                                 - contentDefinitionId
@@ -8154,20 +8158,20 @@ paths:
                                     type: array
                                     nullable: true
                                     items:
-                                        type: object
-                                    description: Optional array of collection associations
+                                        type: string
+                                    description: Optional collection IDs (or lookup objects)
                                 relatedContents:
                                     type: array
                                     nullable: true
                                     items:
-                                        type: object
-                                    description: Optional array of related content items
+                                        type: string
+                                    description: Optional related content IDs (or lookup objects)
                                 tags:
                                     type: array
                                     nullable: true
                                     items:
-                                        type: object
-                                    description: Optional array of tags to assign
+                                        type: string
+                                    description: Optional tag IDs (or lookup objects); IDs, not tag names
                                 properties:
                                     type: object
                                     nullable: true
@@ -8391,14 +8395,14 @@ paths:
                                     type: array
                                     nullable: true
                                     items:
-                                        type: object
-                                    description: Optional array of collection associations for the duplicate
+                                        type: string
+                                    description: Optional collection IDs (or lookup objects) for the duplicate
                                 relatedContents:
                                     type: array
                                     nullable: true
                                     items:
-                                        type: object
-                                    description: Optional array of related content items for the duplicate
+                                        type: string
+                                    description: Optional related content IDs (or lookup objects) for the duplicate
                                 properties:
                                     type: object
                                     nullable: true
@@ -8614,20 +8618,20 @@ paths:
                                     type: array
                                     nullable: true
                                     items:
-                                        type: object
-                                    description: The updated collections array, or null to keep the current value
+                                        type: string
+                                    description: 'Collection IDs (or lookup objects), null to keep the current value, or [] to clear'
                                 relatedContents:
                                     type: array
                                     nullable: true
                                     items:
-                                        type: object
-                                    description: The updated related content array, or null to keep the current value
+                                        type: string
+                                    description: 'Related content IDs (or lookup objects), null to keep the current value, or [] to clear'
                                 tags:
                                     type: array
                                     nullable: true
                                     items:
-                                        type: object
-                                    description: The updated tags array, or null to keep the current value
+                                        type: string
+                                    description: 'Tag IDs (or lookup objects), null to keep the current value, or [] to clear'
                                 properties:
                                     type: object
                                     nullable: true
@@ -8671,16 +8675,16 @@ paths:
                                     description: Whether the saved search is bookmarked
                                 public:
                                     type: boolean
-                                    description: Whether the saved search is visible to all users
+                                    description: 'Sent, but not applied: the API''s saved search add model has no public field'
                                 sequence:
                                     type: integer
                                     description: The display order sequence number
                                 savedSearchType:
                                     type: integer
-                                    description: The display type (0 = List, 1 = Preview Image, 2 = Header)
+                                    description: 'Sent, but not applied when adding: the add model has no display type'
                                 query:
                                     type: string
-                                    description: The search query string (maps to searchTerms)
+                                    description: 'The search query string (stored as searchTerms and as the criteria''s searchQuery)'
                                 offset:
                                     type: integer
                                     description: The page offset for pagination (stored in criteria, defaults to 0)
@@ -8688,11 +8692,15 @@ paths:
                                     type: integer
                                     description: The page size for results (stored in criteria, defaults to 10)
                                 filters:
-                                    type: object
-                                    description: Filter object to apply to the search (maps to advanceSearchFilters)
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: An array of search filters (stored in criteria), or an advanced-search filter object (sent as advanceSearchFilters)
                                 sortFields:
-                                    type: string
-                                    description: Sort field string for ordering results (maps to sortField)
+                                    type: array
+                                    items:
+                                        type: object
+                                    description: An array of sort fields (stored in criteria), or a sort field name (sent as sortField)
                                 searchResultFields:
                                     type: array
                                     items:
@@ -8800,9 +8808,9 @@ paths:
 
     /getSearchSaved:
         post:
-            summary: Search saved searches with custom criteria
+            summary: Run a search described as an unsaved saved search
             operationId: getSearchSaved
-            description: Performs a search across saved searches using the provided query, filters, and pagination parameters. Supports similarity search, scoring thresholds, and custom result field selection.
+            description: 'Sends the query, filters, and pagination parameters as a saved search''s criteria and returns the matching content, without storing a saved search. Supports similarity search and scoring thresholds.'
             tags:
                 - Saved Search
             requestBody:
@@ -8834,8 +8842,8 @@ paths:
                                 searchResultFields:
                                     type: array
                                     items:
-                                        type: string
-                                    description: Array of field names to include in results
+                                        type: object
+                                    description: 'Fields to include in results. Currently not applied: this endpoint replaces them with its deprecated returnedFieldNames query parameter'
                                 similarAssetId:
                                     type: string
                                     description: The ID of an asset to find similar results for
@@ -8900,7 +8908,7 @@ paths:
         patch:
             summary: Partially update a saved search
             operationId: patchSavedSearch
-            description: Performs a partial update of a saved search, allowing individual fields to be modified without affecting other properties. Only the provided fields are updated; omitted fields remain unchanged. Boolean fields (featured, bookmarked, public) support explicit `false` values.
+            description: Performs a partial update of a saved search, allowing individual fields to be modified without affecting other properties. Only the provided fields are updated; omitted fields remain unchanged. Boolean fields (featured, bookmarked) support explicit `false` values. The API patches name, sequence, featured and bookmarked only.
             tags:
                 - Saved Search
             requestBody:
@@ -8924,7 +8932,7 @@ paths:
                                     description: Whether the saved search is bookmarked
                                 public:
                                     type: boolean
-                                    description: Whether the saved search is publicly visible
+                                    description: 'Sent, but not applied: the API''s patch model has no public field'
                                 sequence:
                                     type: integer
                                     description: The display order sequence number
@@ -8968,13 +8976,13 @@ paths:
                                     description: Whether the saved search is bookmarked
                                 public:
                                     type: boolean
-                                    description: Whether the saved search is publicly visible
+                                    description: 'Sent, but not applied: the API''s saved search update model has no public field'
                                 sequence:
                                     type: integer
                                     description: The display order sequence number
                                 savedSearchType:
                                     type: integer
-                                    description: The display type (0 = List, 1 = Preview Image, 2 = Header)
+                                    description: 'Sent, but not applied: the update model has no display type'
                                 query:
                                     type: string
                                     description: The search query string
@@ -9236,7 +9244,7 @@ paths:
         put:
             summary: Update an existing share
             operationId: updateShare
-            description: Performs a full update of a share identified by its share ID. First retrieves the current share data, then merges provided values with existing values (falling back to current values for any parameters not supplied). Returns null if the share is not found.
+            description: 'Performs a full update of a share identified by its share ID. First retrieves the current share data, then merges provided values with existing values (falling back to current values for any parameters not supplied). The API always uses SHARE_ID as the share''s id.'
             tags:
                 - Share
             requestBody:
@@ -9251,7 +9259,7 @@ paths:
                                     description: The unique identifier of the share to update (used in the URL)
                                 id:
                                     type: string
-                                    description: The ID value to set in the share body
+                                    description: Sent in the share body, but the API replaces it with SHARE_ID
                                 name:
                                     type: string
                                     description: The display name of the share
@@ -9301,6 +9309,8 @@ paths:
                     description: Bad Request
                 '401':
                     description: The caller is not authenticated
+                '404':
+                    description: The share was not found
 
 
     # ── Video Tracking ──
